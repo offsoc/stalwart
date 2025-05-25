@@ -12,13 +12,19 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout repository
+    - name: Checkout main repository
       uses: actions/checkout@v4
+
+    - name: Clone stalwart repository
+      run: |
+        git clone https://github.com/offsoc/stalwart.git
+        cd stalwart
 
     - name: Install Rust manually
       run: |
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      shell: bash
 
     - name: Install dependencies
       run: |
