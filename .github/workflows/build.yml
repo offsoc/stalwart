@@ -31,7 +31,7 @@ jobs:
       run: cargo build --manifest-path=stalwart/crates/main/Cargo.toml --release
 
     - name: Upload stalwart binary
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: stalwart
         path: stalwart/target/release/stalwart*
