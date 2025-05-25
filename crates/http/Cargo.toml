@@ -26,7 +26,7 @@ mail-auth = { version = "0.7", features = ["generate"] }
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 tokio = { version = "1.45", features = ["rt"] }
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
-hyper-util = { version = "0.1.1", features = ["tokio"] }
+hyper-util = { version = "0.1.12", features = ["tokio"] }
 http-body-util = "0.1.0"
 async-stream = "0.3.5"
 quick-xml = "0.37"
