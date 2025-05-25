@@ -1,0 +1,37 @@
+name: Build and Upload
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: actions/setup-rust@v1
+      with:
+        rust-version: stable
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+        wget https://github.com/apple/foundationdb/releases/download/7.3.67/foundationdb-clients_7.3.67-1_amd64.deb
+        sudo dpkg -i foundationdb-clients_7.3.67-1_amd64.deb || true
+
+    - name: Build
+      run: cargo build --manifest-path=stalwart/crates/main/Cargo.toml --release
+
+    - name: Upload stalwart binary
+      uses: actions/upload-artifact@v3
+      with:
+        name: stalwart
+        path: stalwart/target/release/stalwart*
