@@ -1,37 +1,47 @@
-name: Build and Upload
+name: CI Build Stalwart Mail
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
-  workflow_dispatch:
+    branches:
+      - main
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - name: Checkout current repo
+      uses: actions/checkout@v3
 
-    - name: Install Rust manually
+    - name: Clone stalwart project
+      run: |
+        git clone https://github.com/offsoc/stalwart.git
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler libsqlite3-dev
+
+    - name: Install FoundationDB client (optional)
+      run: |
+        wget https://github.com/apple/foundationdb/releases/download/7.3.67/foundationdb-clients_7.3.67-1_amd64.deb
+        sudo dpkg -i foundationdb-clients_7.3.67-1_amd64.deb
+
+    - name: Install Rust manually via rustup
       run: |
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-    - name: Install dependencies
+    - name: Build stalwart (SQLite backend)
       run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
-        wget https://github.com/apple/foundationdb/releases/download/7.3.67/foundationdb-clients_7.3.67-1_amd64.deb
-        sudo dpkg -i foundationdb-clients_7.3.67-1_amd64.deb || true
-
-    - name: Build
-      run: cargo build --manifest-path=stalwart/crates/main/Cargo.toml --release
+        cd stalwart
+        ~/.cargo/bin/cargo build --manifest-path=crates/main/Cargo.toml --release
 
     - name: Upload stalwart binary
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: stalwart
+        name: stalwart-mail
         path: stalwart/target/release/stalwart*
