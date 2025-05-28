@@ -12,7 +12,7 @@ on:
         default: false
         type: boolean
   push:
-    tags: ["v*.*.*"]
+     tags: ["v*.*.*"]
 
 env:
   SCCACHE_GHA_ENABLED: true
@@ -47,8 +47,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{github.repository_owner}} # 已更正：从 ghrc.repository_owner 改为 github.repository_owner
-          password: ${{github.token}} # 已更正：从 ghrc.token 改为 github.token
+          username: ${{github.repository_owner}}
+          password: ${{github.token}}
 
       - name: Log In to DockerHub
         uses: docker/login-action@v3
@@ -76,6 +76,7 @@ jobs:
             $(printf 'ghcr.io/${{github.repository}}@sha256:%s ' *)
           docker buildx imagetools create $(jq -cr '.target."docker-metadata-action".tags | map(select(startswith("index.docker.io/${{github.repository}}")) | "-t " + .) | join(" ")' ${{ runner.temp }}/${{matrix.variant}}/bake-meta.json) \
             $(printf 'index.docker.io/${{github.repository}}@sha256:%s ' *)
+
       - name: Inspect ${{matrix.variant}} image
         id: manifest-digest
         run: |
@@ -85,6 +86,7 @@ jobs:
           echo "DOCKERHUB_DIGEST_SHA=$(cat DOCKERHUB_DIGEST_SHA)" | tee -a "${GITHUB_ENV}"
           cosign sign --yes $(jq --arg GHCR_DIGEST_SHA "$(cat GHCR_DIGEST_SHA)" -cr '.target."docker-metadata-action".tags | map(select(startswith("ghcr.io/${{github.repository}}")) | . + "@" + $GHCR_DIGEST_SHA) | join(" ")' ${{ runner.temp }}/${{matrix.variant}}/bake-meta.json)
           cosign sign --yes $(jq --arg DOCKERHUB_DIGEST_SHA "$(cat DOCKERHUB_DIGEST_SHA)" -cr '.target."docker-metadata-action".tags | map(select(startswith("index.docker.io/${{github.repository}}")) | . + "@" + $DOCKERHUB_DIGEST_SHA) | join(" ")' ${{ runner.temp }}/${{matrix.variant}}/bake-meta.json)
+
       - name: Attest GHCR
         uses: actions/attest-build-provenance@v2
         with:
@@ -160,12 +162,13 @@ jobs:
               mirrors = ["https://mirror.gcr.io"]
           driver-opts: |
             network=host
+
       - name: Log In to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{github.repository_owner}} # 已更正：从 ghrc.repository_owner 改为 github.repository_owner
-          password: ${{github.token}} # 已更正：从 ghrc.token 改为 github.token
+          username: ${{github.repository_owner}}
+          password: ${{github.token}}
 
       - name: Log In to DockerHub
         uses: docker/login-action@v3
@@ -177,6 +180,7 @@ jobs:
         id: cal-dep-shasum
         run: |
           echo "checksum=$(yq -p toml -oy '.package[] | select((.source | contains("")) or (.checksum | contains("")))' Cargo.lock | sha256sum | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Cache apt
         uses: actions/cache@v4
         id: apt-cache
@@ -207,26 +211,6 @@ jobs:
             }
           skip-extraction: ${{ steps.cargo-cache.outputs.cache-hit }} && ${{ steps.apt-cache.outputs.cache-hit }}
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler libsqlite3-dev
-
-      - name: Install FoundationDB client (amd64)
-        if: matrix.platform == 'linux/amd64' # 仅在 amd64 平台运行
-        run: |
-          wget https://github.com/apple/foundationdb/releases/download/7.3.67/foundationdb-clients_7.3.67-1_amd64.deb
-          sudo apt install ./foundationdb-clients_7.3.67-1_amd64.deb # 更安全的安装方式
-
-      - name: Install FoundationDB client (aarch64)
-        if: matrix.platform == 'linux/arm64' # 仅在 aarch64 平台运行
-        run: |
-          wget https://github.com/apple/foundationdb/releases/download/7.3.67/foundationdb-clients_7.3.67-1_aarch64.deb
-          sudo apt install ./foundationdb-clients_7.3.67-1_aarch64.deb # 更安全的安装方式
-
-      # 注意：对于 arm/v7 和 arm/v6 架构，FoundationDB 客户端 .deb 包可能无法直接获取或兼容。
-      # 如果需要 FoundationDB 功能，您可能需要为这些目标单独编译或调整构建策略。
-
       - name: Extract Metadata for Docker
         uses: docker/metadata-action@v5
         id: meta
@@ -241,6 +225,7 @@ jobs:
             type=ref,event=branch,prefix=branch-
             type=edge,branch=main
             type=semver,pattern=v{{major}}.{{minor}}
+
       - name: Build Artifact
         id: bake
         uses: docker/bake-action@v6
@@ -268,6 +253,7 @@ jobs:
           path: |
             artifact
             !artifact/*.json
+
       - name: Export digest & Rename meta bake definition file
         if: github.event_name == 'push' || inputs.Docker
         run: |
@@ -275,6 +261,7 @@ jobs:
           mkdir -p ${{ runner.temp }}/digests
           digest="${{ fromJSON(steps.bake.outputs.metadata).image['containerimage.digest'] }}"
           touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
       - name: Upload digest
         if: github.event_name == 'push' || inputs.Docker
         uses: actions/upload-artifact@v4
@@ -309,7 +296,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # - target: aarch64-pc-windows-msvc
+        #   - target: aarch64-pc-windows-msvc
           - target: x86_64-pc-windows-msvc
 
     steps:
@@ -329,6 +316,7 @@ jobs:
           mkdir -p artifacts
           mv ./target/${{matrix.target}}/release/stalwart.exe ./artifacts/stalwart.exe
           mv ./target/${{matrix.target}}/release/stalwart-cli.exe ./artifacts/stalwart-cli.exe
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -362,11 +350,9 @@ jobs:
           curl --retry 5 -Lso foundationdb.pkg "$(gh api -X GET /repos/apple/foundationdb/releases --jq '.[] | select(.prerelease == false) | .assets[] | select(.name | test("${{startsWith(matrix.target, 'x86') && 'x86_64' || 'arm64'}}" + ".pkg$")) | .browser_download_url' | head -n1)"
           sudo installer -allowUntrusted -dumplog -pkg foundationdb.pkg -target /
           cargo build --release --target ${{matrix.target}} -p stalwart --no-default-features --features "foundationdb elastic s3 redis nats enterprise"
-           # 确保 stalwart-enterprise 被构建并移动其输出
-          cargo build --release --target ${{matrix.target}} -p stalwart-enterprise --no-default-features --features "sqlite foundationdb postgres mysql rocks elastic s3 redis azure nats zenoh kafka enterprise"
           mkdir -p artifacts
           mv ./target/${{matrix.target}}/release/stalwart ./artifacts/stalwart-foundationdb
-          mv ./target/${{matrix.target}}/release/stalwart-enterprise ./artifacts/stalwart-enterprise
+
       - name: Build
         run: |
           rustup target add ${{matrix.target}}
@@ -375,6 +361,7 @@ jobs:
           mkdir -p artifacts
           mv ./target/${{matrix.target}}/release/stalwart ./artifacts/stalwart
           mv ./target/${{matrix.target}}/release/stalwart-cli ./artifacts/stalwart-cli
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -422,6 +409,7 @@ jobs:
               dir_name=$(basename "$arch_dir")
               compress_files "$dir_name"
           done
+
       - name: Attest binary
         id: attest
         uses: actions/attest-build-provenance@v2
@@ -429,12 +417,14 @@ jobs:
           subject-path: |
             archive/**/*.tar.gz
             archive/**/*.zip
+
       - name: Use cosign to sign existing artifacts
         uses: sigstore/gh-action-sigstore-python@v3.0.0
         with:
           inputs: |
             archive/**/*.tar.gz
             archive/**/*.zip
+
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
