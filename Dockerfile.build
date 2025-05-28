@@ -69,31 +69,54 @@ RUN \
                 echo "export FDB_ARCH=aarch64" >> /env-cargo; \
                 ;; \
             *) \
-                exit 1; \
+                # No FDB_ARCH for other target architectures, FDB will be skipped
                 ;; \
         esac; \
     fi
-# Install FoundationDB
+
+# --- Start FoundationDB Client Installation ---
+# Initialize a flag file to indicate if FoundationDB client was successfully installed.
+# This file will be removed if installation fails.
+RUN touch /fdb_client_installed.flag
+
 RUN \
     source /env-cargo && \
     if [ ! -z "${FDB_ARCH}" ]; then \
-        curl --retry 5 -Lso fdb-client.deb "$(curl --retry 5 -Ls 'https://api.github.com/repos/apple/foundationdb/releases' | jq --arg FDB_ARCH "$FDB_ARCH" -r '.[] | select(.prerelease == false) | .assets[] | select(.name | test("foundationdb-clients.*" + $FDB_ARCH + ".deb$")) | .browser_download_url' | head -n1)" && \
-        mkdir -p /fdb && \
-        dpkg -x fdb-client.deb /fdb && \
-        mv /fdb/usr/include/foundationdb /usr/include && \
-        mv /fdb/usr/lib/libfdb_c.so /usr/lib && \
-        rm -rf fdb-client.deb /fdb; \
+        echo "Attempting to install FoundationDB client for ${FDB_ARCH}..." && \
+        if curl --retry 5 -Lso fdb-client.deb "$(curl --retry 5 -Ls 'https://api.github.com/repos/apple/foundationdb/releases' | jq --arg FDB_ARCH "$FDB_ARCH" -r '.[] | select(.prerelease == false) | .assets[] | select(.name | test("foundationdb-clients.*" + $FDB_ARCH + ".deb$")) | .browser_download_url' | head -n1)" && \
+           dpkg -x fdb-client.deb /fdb && \
+           mv /fdb/usr/include/foundationdb /usr/include && \
+           mv /fdb/usr/lib/libfdb_c.so /usr/lib; then \
+            echo "FoundationDB client (${FDB_ARCH}) installed successfully." && \
+            rm -rf fdb-client.deb /fdb; \
+        else \
+            echo "FoundationDB client (${FDB_ARCH}) installation failed or is incompatible; skipping." && \
+            rm -f fdb-client.deb && \
+            rm -rf /fdb && \
+            rm /fdb_client_installed.flag; \
+        fi \
+    else \
+        echo "FDB_ARCH not set for current target (${TARGET}); skipping FoundationDB client installation." && \
+        rm /fdb_client_installed.flag; \
     fi
-# Cargo-chef Cache layer
+# --- End FoundationDB Client Installation ---
+
+# Cargo-chef Cache layer for FoundationDB-enabled features
+# Only run if FoundationDB client was installed
 RUN \
     --mount=type=secret,id=ACTIONS_RESULTS_URL,env=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN,env=ACTIONS_RUNTIME_TOKEN \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
-    if [ ! -z "${FDB_ARCH}" ]; then \
-        RUSTFLAGS="-L /usr/lib" cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p stalwart --no-default-features --features "foundationdb elastic s3 redis nats enterprise"; \
+    if [ -f /fdb_client_installed.flag ]; then \
+        echo "Running cargo chef cook for FoundationDB features..."; \
+        RUSTFLAGS="-L /usr/lib" cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p stalwart-enterprise --no-default-features --features "sqlite foundationdb postgres mysql rocks elastic s3 redis azure nats zenoh kafka enterprise"; \
+    else \
+        echo "FoundationDB client not installed, skipping cargo chef cook for FoundationDB features."; \
     fi
+
+# Cargo-chef Cache layer for generic features (always run)
 RUN \
     --mount=type=secret,id=ACTIONS_RESULTS_URL,env=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN,env=ACTIONS_RUNTIME_TOKEN \
@@ -102,22 +125,29 @@ RUN \
     source /env-cargo && \
     cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p stalwart --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure nats enterprise" && \
     cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p stalwart-cli
+
 # Copy the source code
 COPY . .
 ENV RUSTC_WRAPPER="sccache" \
     SCCACHE_GHA_ENABLED=true
-# Build FoundationDB version
+
+# Build stalwart-enterprise (with FoundationDB features)
+# Only run if FoundationDB client was installed
 RUN \
     --mount=type=secret,id=ACTIONS_RESULTS_URL,env=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN,env=ACTIONS_RUNTIME_TOKEN \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
-    if [ ! -z "${FDB_ARCH}" ]; then \
-        RUSTFLAGS="-L /usr/lib" cargo zigbuild --release --target ${TARGET} -p stalwart --no-default-features --features "foundationdb elastic s3 redis nats enterprise" && \
-        mv /app/target/${TARGET}/release/stalwart /app/artifact/stalwart-foundationdb; \
+    if [ -f /fdb_client_installed.flag ]; then \
+        echo "FoundationDB client installed, building stalwart-enterprise..."; \
+        RUSTFLAGS="-L /usr/lib" cargo zigbuild --release --target ${TARGET} -p stalwart-enterprise --no-default-features --features "sqlite foundationdb postgres mysql rocks elastic s3 redis azure nats zenoh kafka enterprise" && \
+        mv "/app/target/${TARGET}/release/stalwart-enterprise" /app/artifact/stalwart-enterprise; \
+    else \
+        echo "FoundationDB client not installed; skipping stalwart-enterprise build."; \
     fi
-# Build generic version
+
+# Build generic version (stalwart and stalwart-cli)
 RUN \
     --mount=type=secret,id=ACTIONS_RESULTS_URL,env=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN,env=ACTIONS_RUNTIME_TOKEN \
@@ -130,7 +160,7 @@ RUN \
     mv /app/target/${TARGET}/release/stalwart-cli /app/artifact/stalwart-cli
 
 # *****************
-# Binary stage
+# Binary stage (Collects all compiled binaries)
 # *****************
 FROM scratch AS binaries
 COPY --from=builder /app/artifact /
@@ -142,9 +172,17 @@ FROM --platform=$TARGETPLATFORM docker.io/library/debian:bookworm-slim AS gnu
 WORKDIR /opt/stalwart
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -yq ca-certificates tzdata
-COPY --from=builder /app/artifact/stalwart /usr/local/bin
-COPY --from=builder /app/artifact/stalwart-cli /usr/local/bin
+    apt-get install -yq ca-certificates tzdata && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* # Clean up apt cache for smaller image size
+
+COPY --from=builder /app/artifact/stalwart /usr/local/bin/stalwart
+COPY --from=builder /app/artifact/stalwart-cli /usr/local/bin/stalwart-cli
+# Conditionally copy stalwart-enterprise if it was built
+RUN if [ -f /app/artifact/stalwart-enterprise ]; then \
+    echo "Copying stalwart-enterprise to /usr/local/bin/stalwart-enterprise..."; \
+    cp /app/artifact/stalwart-enterprise /usr/local/bin/stalwart-enterprise; \
+fi
 COPY ./resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod -R 755 /usr/local/bin
 CMD ["/usr/local/bin/stalwart"]
@@ -158,8 +196,13 @@ ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
 FROM --platform=$TARGETPLATFORM alpine AS musl
 WORKDIR /opt/stalwart
 RUN apk add --update --no-cache ca-certificates tzdata && rm -rf /var/cache/apk/*
-COPY --from=builder /app/artifact/stalwart /usr/local/bin
-COPY --from=builder /app/artifact/stalwart-cli /usr/local/bin
+COPY --from=builder /app/artifact/stalwart /usr/local/bin/stalwart
+COPY --from=builder /app/artifact/stalwart-cli /usr/local/bin/stalwart-cli
+# Conditionally copy stalwart-enterprise if it was built
+RUN if [ -f /app/artifact/stalwart-enterprise ]; then \
+    echo "Copying stalwart-enterprise to /usr/local/bin/stalwart-enterprise..."; \
+    cp /app/artifact/stalwart-enterprise /usr/local/bin/stalwart-enterprise; \
+fi
 COPY ./resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod -R 755 /usr/local/bin
 CMD ["/usr/local/bin/stalwart"]
