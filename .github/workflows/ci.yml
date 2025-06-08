@@ -167,8 +167,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ghcr.repository_owner}}
-          password: ${{ghcr.token}}
+          username: ${{github.repository_owner}}
+          password: ${{github.token}}
 
       - name: Log In to DockerHub
         uses: docker/login-action@v3
