@@ -270,28 +270,56 @@ impl PrincipalPropFind for Server {
                                 ))],
                             ));
                         }
-                        PrincipalProperty::CalendarHomeSet => {
-                            fields.push(DavPropertyValue::new(
-                                property.clone(),
-                                vec![Href(format!(
-                                    "{}/{}/",
-                                    DavResourceName::Cal.base_path(),
-                                    percent_encoding::utf8_percent_encode(&name, RFC_3986),
-                                ))],
-                            ));
-                            response.set_namespace(Namespace::CalDav);
+                        PrincipalProperty::CalendarHomeSet
+                        | PrincipalProperty::AddressbookHomeSet => {
+                            let mut hrefs = Vec::new();
+                            let (collection, resource_name, namespace) =
+                                if principal_property == &PrincipalProperty::CalendarHomeSet {
+                                    (
+                                        Collection::Calendar,
+                                        DavResourceName::Cal,
+                                        Namespace::CalDav,
+                                    )
+                                } else {
+                                    (
+                                        Collection::AddressBook,
+                                        DavResourceName::Card,
+                                        Namespace::CardDav,
+                                    )
+                                };
+
+                            hrefs.push(Href(format!(
+                                "{}/{}/",
+                                resource_name.base_path(),
+                                percent_encoding::utf8_percent_encode(&name, RFC_3986),
+                            )));
+
+                            if account_id == access_token.primary_id() {
+                                for account_id in access_token.all_ids_by_collection(collection) {
+                                    if account_id != access_token.primary_id() {
+                                        let other_name = self
+                                            .store()
+                                            .get_principal_name(account_id)
+                                            .await
+                                            .caused_by(trc::location!())?
+                                            .unwrap_or_else(|| format!("_{account_id}"));
+
+                                        hrefs.push(Href(format!(
+                                            "{}/{}/",
+                                            resource_name.base_path(),
+                                            percent_encoding::utf8_percent_encode(
+                                                &other_name,
+                                                RFC_3986
+                                            ),
+                                        )));
+                                    }
+                                }
+                            }
+
+                            fields.push(DavPropertyValue::new(property.clone(), hrefs));
+                            response.set_namespace(namespace);
                         }
-                        PrincipalProperty::AddressbookHomeSet => {
-                            fields.push(DavPropertyValue::new(
-                                property.clone(),
-                                vec![Href(format!(
-                                    "{}/{}/",
-                                    DavResourceName::Card.base_path(),
-                                    percent_encoding::utf8_percent_encode(&name, RFC_3986),
-                                ))],
-                            ));
-                            response.set_namespace(Namespace::CardDav);
-                        }
+
                         PrincipalProperty::PrincipalAddress => {
                             fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             response.set_namespace(Namespace::CardDav);
