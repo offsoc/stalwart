@@ -574,10 +574,8 @@ impl PrincipalManager for Server {
                         // Validate changes
                         for change in &changes {
                             match change.field {
-                                PrincipalField::Secrets => {
-                                    self.assert_supported_directory(false)?;
-                                }
-                                PrincipalField::Name
+                                PrincipalField::Secrets
+                                | PrincipalField::Name
                                 | PrincipalField::Emails
                                 | PrincipalField::Quota
                                 | PrincipalField::UsedQuota
@@ -588,7 +586,8 @@ impl PrincipalManager for Server {
                                 | PrincipalField::Members
                                 | PrincipalField::Lists
                                 | PrincipalField::Urls
-                                | PrincipalField::ExternalMembers => (),
+                                | PrincipalField::ExternalMembers
+                                | PrincipalField::Locale => (),
                                 PrincipalField::Tenant => {
                                     // Tenants are not allowed to change their tenantId
                                     if access_token.tenant.is_some() {

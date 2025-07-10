@@ -319,12 +319,14 @@ impl PropFindRequestHandler for Server {
             self.core.groupware.max_results,
         );
         let mut is_sync_limited = false;
+        let mut is_propfind = false;
 
         let paths = match std::mem::take(&mut query.resource) {
             DavQueryResource::Uri(resource) => {
                 collection_container = resource.collection;
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
+                is_propfind = true;
 
                 get(
                     self,
@@ -348,7 +350,6 @@ impl PropFindRequestHandler for Server {
                 collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
-                response.set_namespace(collection_container.namespace());
 
                 multiget(
                     self,
@@ -371,7 +372,7 @@ impl PropFindRequestHandler for Server {
                 collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
-                response.set_namespace(collection_container.namespace());
+
                 items
             }
             DavQueryResource::Discovery {
@@ -381,7 +382,6 @@ impl PropFindRequestHandler for Server {
                 collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
-                response.set_namespace(collection_container.namespace());
 
                 // Add container info
                 if !query.depth_no_root {
@@ -407,6 +407,7 @@ impl PropFindRequestHandler for Server {
             }
             DavQueryResource::None => unreachable!(),
         };
+        response.set_namespace(collection_container.namespace());
 
         let mut skip_not_found = query.expand;
         let properties = match &query.propfind {
@@ -1124,6 +1125,12 @@ impl PropFindRequestHandler for Server {
         }
 
         if !response.response.0.is_empty() || !query.sync_type.is_none() {
+            Ok(HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string()))
+        } else if !is_propfind {
+            response.add_response(
+                Response::new_status([query.uri], StatusCode::NOT_FOUND)
+                    .with_response_description("No resources found"),
+            );
             Ok(HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string()))
         } else {
             Ok(HttpResponse::new(StatusCode::NOT_FOUND))

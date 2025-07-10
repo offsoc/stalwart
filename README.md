@@ -53,9 +53,10 @@ Key features:
     * Distributed virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
     * Envelope rewriting and message modification.
 - **Collaboration** server:
-  - Calendar and scheduling with [CalDAV](https://datatracker.ietf.org/doc/html/rfc4791).
-  - Contact management with [CardDAV](https://datatracker.ietf.org/doc/html/rfc6352).
-  - File storage and sharing with [WebDAV](https://datatracker.ietf.org/doc/html/rfc4918).
+  - Calendaring with [CalDAV](https://datatracker.ietf.org/doc/html/rfc4791), [CalDAV Scheduling](https://datatracker.ietf.org/doc/html/rfc6638) and e-mail alarms support.
+  - Contact management with [CardDAV](https://datatracker.ietf.org/doc/html/rfc6352) support.
+  - File storage with [WebDAV](https://datatracker.ietf.org/doc/html/rfc4918) support.
+  - Sharing with [WebDAV ACL](https://datatracker.ietf.org/doc/html/rfc3744) support for fine-grained access control.
 - **Spam** and **Phishing** built-in filter:
   - Comprehensive set of filtering **rules** on par with popular solutions.
   - LLM-driven spam filtering and message analysis.
@@ -140,7 +141,7 @@ Your support is crucial in helping us continue to improve the project, add new f
 
 These are some of our open-source sponsors:
 
-<!-- sponsors --><a href="https://github.com/kbjr"><img src="https:&#x2F;&#x2F;github.com&#x2F;kbjr.png" width="60px" alt="User avatar: James Brumond" /></a><a href="https://github.com/MailRoute"><img src="https:&#x2F;&#x2F;github.com&#x2F;MailRoute.png" width="60px" alt="User avatar: MailRoute, Inc." /></a><a href="https://github.com/JAMflow-Cloud"><img src="https:&#x2F;&#x2F;github.com&#x2F;JAMflow-Cloud.png" width="60px" alt="User avatar: JAMflow Cloud" /></a><a href="https://github.com/starsong-consulting"><img src="https:&#x2F;&#x2F;github.com&#x2F;starsong-consulting.png" width="60px" alt="User avatar: Starsong GmbH" /></a><a href="https://github.com/Vie-eco"><img src="https:&#x2F;&#x2F;github.com&#x2F;Vie-eco.png" width="60px" alt="User avatar: Vie.eco" /></a><a href="https://github.com/mingfu-design"><img src="https:&#x2F;&#x2F;github.com&#x2F;mingfu-design.png" width="60px" alt="User avatar: Ming Fu Design Ltd. 明孚設計有限公司" /></a><a href="https://github.com/tamwuff"><img src="https:&#x2F;&#x2F;github.com&#x2F;tamwuff.png" width="60px" alt="User avatar: Tamino" /></a><!-- sponsors -->
+<!-- sponsors --><a href="https://github.com/kbjr"><img src="https:&#x2F;&#x2F;github.com&#x2F;kbjr.png" width="60px" alt="User avatar: James Brumond" /></a><a href="https://github.com/MailRoute"><img src="https:&#x2F;&#x2F;github.com&#x2F;MailRoute.png" width="60px" alt="User avatar: MailRoute, Inc." /></a><a href="https://github.com/JAMflow-Cloud"><img src="https:&#x2F;&#x2F;github.com&#x2F;JAMflow-Cloud.png" width="60px" alt="User avatar: JAMflow Cloud" /></a><a href="https://github.com/starsong-consulting"><img src="https:&#x2F;&#x2F;github.com&#x2F;starsong-consulting.png" width="60px" alt="User avatar: Starsong GmbH" /></a><a href="https://github.com/Vie-eco"><img src="https:&#x2F;&#x2F;github.com&#x2F;Vie-eco.png" width="60px" alt="User avatar: Vie.eco" /></a><a href="https://github.com/mingfu-design"><img src="https:&#x2F;&#x2F;github.com&#x2F;mingfu-design.png" width="60px" alt="User avatar: Ming Fu Design Ltd. 明孚設計有限公司" /></a><a href="https://github.com/tamwuff"><img src="https:&#x2F;&#x2F;github.com&#x2F;tamwuff.png" width="60px" alt="User avatar: Tamino" /></a><a href="https://github.com/m4c-ro"><img src="https:&#x2F;&#x2F;github.com&#x2F;m4c-ro.png" width="60px" alt="User avatar: " /></a><a href="https://github.com/panascais"><img src="https:&#x2F;&#x2F;github.com&#x2F;panascais.png" width="60px" alt="User avatar: panascais" /></a><!-- sponsors -->
 
 <br/>If you would like to support our work, please consider [becoming a sponsor](https://opencollective.com/stalwart).
 
