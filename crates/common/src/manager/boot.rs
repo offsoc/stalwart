@@ -438,7 +438,8 @@ impl BootManager {
                 );
 
                 // Webadmin auto-update
-                if config
+                // Disabled temporarily until selective updates are implemented
+                /*if config
                     .property_or_default::<bool>("webadmin.auto-update", "false")
                     .unwrap_or_default()
                 {
@@ -449,7 +450,7 @@ impl BootManager {
                             CausedBy = err
                         );
                     }
-                }
+                }*/
 
                 // Spam filter auto-update
                 if config
@@ -470,7 +471,7 @@ impl BootManager {
                     core.network.asn_geo_lookup,
                     AsnGeoLookupConfig::Resource { .. }
                 );
-                let (ipc, ipc_rxs) = build_ipc(core.storage.pubsub.is_none());
+                let (ipc, ipc_rxs) = build_ipc(!core.storage.pubsub.is_none());
                 let inner = Arc::new(Inner {
                     shared_core: ArcSwap::from_pointee(core),
                     data,
