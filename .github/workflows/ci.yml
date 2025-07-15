@@ -47,8 +47,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{github.repository_owner}}
-          password: ${{github.token}}
+          username: ${{github.actor}}
+          password: ${{github.GITHUB_TOKEN}}
 
       - name: Log In to DockerHub
         uses: docker/login-action@v3
@@ -167,8 +167,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{github.repository_owner}}
-          password: ${{github.token}}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log In to DockerHub
         uses: docker/login-action@v3
@@ -296,7 +296,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        #   - target: aarch64-pc-windows-msvc
+          - target: aarch64-pc-windows-msvc
           - target: x86_64-pc-windows-msvc
 
     steps:
