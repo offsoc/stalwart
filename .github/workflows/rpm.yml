@@ -9,17 +9,73 @@ on:
       - main
 
 jobs:
-  build:
+  # 此 Job 用于构建和推送自定义 Rocky Linux 镜像到 GHCR
+  build-custom-images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # 推送镜像到 GHCR 需要此权限
+    outputs:
+      # 传递镜像标签，以便下游 Job 可以使用它们
+      rocky_9_6_image: ${{ steps.build_rocky_9_6.outputs.image }}
+      rocky_10_0_image: ${{ steps.build_rocky_10_0.outputs.image }} # 留着以备 10.0 稳定时使用
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and Push Rocky Linux 9.6 custom image
+      id: build_rocky_9_6
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.rocky # 使用你自定义的 Dockerfile
+        push: true
+        tags: ghcr.io/${{ github.repository }}/rockylinux-custom:9.6-${{ github.sha }}
+        build-args: |
+          ROCKY_VERSION=9.6
+      outputs:
+        image: ghcr.io/${{ github.repository }}/rockylinux-custom:9.6-${{ github.sha }}
+
+    - name: Build and Push Rocky Linux 10.0 custom image (在 10.0 发布前可能会失败)
+      id: build_rocky_10_0
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.rocky
+        push: true
+        tags: ghcr.io/${{ github.repository }}/rockylinux-custom:10.0-${{ github.sha }}
+        build-args: |
+          ROCKY_VERSION=10.0
+      outputs:
+        image: ghcr.io/${{ github.repository }}/rockylinux-custom:10.0-${{ github.sha }}
+      continue-on-error: true # 允许此步骤失败，如果 10.0 镜像尚不可用
+
+  build-stalwart:
+    needs: build-custom-images # 此 Job 依赖于自定义镜像的构建和推送
     strategy:
       matrix:
         os_image:
-          # 使用稳定且可用的 CentOS Stream 9 作为 Rocky Linux 9 的等效版本
-          - centos:stream9
-          # Fedora 42 是当前稳定或最新版本
+          # 使用自定义的 Rocky Linux 9.6 镜像
+          - ${{ needs.build-custom-images.outputs.rocky_9_6_image }}
+          # 包含 Fedora 42 (已知稳定)
           - fedora:42
-          # 移除了 centos:stream10 和 fedora:43，因为它们尚未正式发布/可用作 Docker 镜像。
-          # 它们发布且稳定后，你可以再添加回来。
-
+          # 仅当自定义 10.0 镜像构建成功时才包含 Rocky 10.0。
+          # 这样可以确保如果构建 10.0 基础镜像失败（因为 rockylinux:10.0 还没发布），
+          # 这个 matrix 条目会被跳过，而不是导致整个 Job 失败。
+          - ${{ fromJson(format('{{"include": [{{"os_image": "{0}"}}]}}', needs.build-custom-images.outputs.rocky_10_0_image)).include[0].os_image if success() && needs.build-custom-images.outputs.rocky_10_0_image != '' }}
+          # 移除了 fedora:43，因为它尚未发布
+          
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.os_image }}
@@ -34,24 +90,25 @@ jobs:
         echo "Updating dnf package index and installing system dependencies for ${{ matrix.os_image }}..."
         dnf update -y
         
-        case "${{ matrix.os_image }}" in
-          "centos:stream9")
-            echo "Configuring repositories for CentOS Stream 9..."
-            dnf install -y dnf-plugins-core # 安装 dnf-plugins-core 以获取 config-manager
-            dnf config-manager --set-enabled crb # 为 Stream 9 启用 CRB（等同于 Rocky 9 的 PowerTools）
-            dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm # 安装 EPEL
-            ;;
-          "fedora:42")
-            echo "Fedora 42 already has core development packages. No extra repos needed."
-            ;;
-          *)
-            # 理论上，当 matrix 固定后，不应该命中这个回退
-            echo "Unknown or unsupported OS image: ${{ matrix.os_image }}. Proceeding without specific repo config."
-            ;;
-        esac
+        # 检查是否是我们自定义的 Rocky Linux 镜像
+        if [[ "${{ matrix.os_image }}" =~ ^ghcr\.io/.*/rockylinux-custom:9\.6- ]]; then
+          echo "Configuring repositories for custom Rocky Linux 9.6 image..."
+          # 这些在 Dockerfile.rocky 中已安装，但 CRB/EPEL 仍需在此处启用
+          dnf config-manager --set-enabled crb
+          dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+        elif [[ "${{ matrix.os_image }}" =~ ^ghcr\.io/.*/rockylinux-custom:10\.0- ]]; then
+          echo "Configuring repositories for custom Rocky Linux 10.0 image..."
+          dnf config-manager --set-enabled crb
+          dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+        elif [[ "${{ matrix.os_image }}" == "fedora:42" ]]; then
+          echo "Fedora 42 already has core development packages. No extra repos needed."
+        else
+          echo "Unknown OS image: ${{ matrix.os_image }}. Proceeding without specific repo config."
+        fi
 
         # 在配置完仓库后安装通用依赖项
-        dnf install -y protobuf-devel sqlite-devel git gcc make bash
+        # bash 现在由 Dockerfile.rocky 安装，但此处保留以保持 Fedora 的一致性
+        dnf install -y protobuf-devel sqlite-devel git gcc make
         
     - name: Clone stalwart project
       run: |
