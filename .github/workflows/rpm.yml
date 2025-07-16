@@ -14,49 +14,66 @@ jobs:
       matrix:
         os_image:
           - rockylinux/rockylinux:9.6
-          - rockylinux/rockylinux:10.0 # 预留给 Rocky Linux 10.0 (一旦发布并有可用镜像)
+          - rockylinux/rockylinux:10.0 # Placeholder for Rocky Linux 10.0 (if/when available)
           - fedora:42
-          - fedora:43 # 预留给 Fedora 43 (尚未发布，但可用于未来准备)
+          - fedora:43 # Placeholder for Fedora 43 (if/when available)
 
-    runs-on: ubuntu-latest # GitHub Actions 宿主机仍然是 Ubuntu
+    runs-on: ubuntu-latest
     container:
-      image: ${{ matrix.os_image }} # 使用 matrix 定义的 os_image 作为容器镜像
-      options: --user root # 以 root 用户运行，以便安装系统依赖和复制文件
+      image: ${{ matrix.os_image }}
+      options: --user root
 
     steps:
     - name: Checkout current repo
-      uses: actions/checkout@v3 # 将你的代码克隆到容器内部
+      uses: actions/checkout@v3
 
     - name: Install system dependencies (${{ matrix.os_image }})
       run: |
-        # 在 Rocky Linux 和 Fedora 环境中，都使用 dnf 包管理器。
-        # 添加 git，因为 git clone 命令需要它。
         echo "Updating dnf package index and installing system dependencies for ${{ matrix.os_image }}..."
         dnf update -y
-        # 将 protobuf-compiler 更改为 protobuf-devel，通常这个包包含编译器
-        dnf install -y protobuf-devel sqlite-devel git 
+        
+        case "${{ matrix.os_image }}" in
+          "rockylinux/rockylinux:9.6")
+            echo "Configuring repositories for Rocky Linux 9.6..."
+            dnf config-manager --set-enabled crb # Enable CRB for Rocky 9
+            # Install EPEL for Rocky Linux 9
+            dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+            ;;
+          "rockylinux/rockylinux:10.0")
+            echo "Configuring repositories for Rocky Linux 10.0..."
+            dnf config-manager --set-enabled crb # Enable CRB for Rocky 10
+            # Install EPEL for Rocky Linux 10
+            # Note: epel-release-latest-10.noarch.rpm might not exist yet if RL10 is not out
+            dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+            ;;
+          "fedora:42")
+            echo "Fedora 42 already has core development packages. No extra repos needed."
+            # Fedora usually doesn't need EPEL or CRB as their core repos are comprehensive.
+            ;;
+          "fedora:43")
+            echo "Fedora 43 (placeholder) already has core development packages. No extra repos needed."
+            ;;
+          *)
+            echo "Unknown OS image: ${{ matrix.os_image }}. Proceeding without specific repo config."
+            ;;
+        esac
 
+        # Install common dependencies after repo configuration
+        dnf install -y protobuf-devel sqlite-devel git
+        
     - name: Clone stalwart project
       run: |
-        # 克隆 stalwart 项目。它将位于工作目录的 'stalwart/' 子目录中。
         echo "Cloning stalwart project..."
         git clone https://github.com/offsoc/stalwart.git
 
     - name: Copy libfdb_c.so to /lib64
       run: |
-        # 将 libfdb_c.so 从克隆的 stalwart 项目内的 resources 文件夹复制到 /lib64
-        # 假设 stalwart 项目已在当前工作目录的 'stalwart/' 子目录中。
         echo "Copying stalwart/resources/libfdb_c.so to /lib64..."
         cp stalwart/resources/libfdb_c.so /lib64/libfdb_c.so
-        # 运行 ldconfig 以更新动态链接器缓存，确保系统能找到新库。
         ldconfig
 
     - name: Install FoundationDB client (optional - .deb is not for RPM-based Linux)
       run: |
-        # 原始脚本中使用的 .deb 包不兼容 Rocky Linux 或 Fedora 系统。
-        # 因此，此步骤将跳过 .deb 包的安装。
-        # 如果 stalwart 确实需要 FoundationDB 客户端库，
-        # 你需要找到适用于这些发行版的 RPM 包，或者从源代码编译 FoundationDB 客户端库。
         echo "--------------------------------------------------------------------------------"
         echo "WARNING: Skipping FoundationDB client .deb package installation for ${{ matrix.os_image }}."
         echo "         .deb packages are NOT compatible with Rocky Linux or Fedora environments."
@@ -64,46 +81,30 @@ jobs:
         echo "         1. Find an official FoundationDB RPM package for your OS,"
         echo "         2. OR Compile FoundationDB client libraries from source for your OS."
         echo "--------------------------------------------------------------------------------"
-        # 示例：如果你找到了 FoundationDB 的 RPM 包，可以这样安装：
-        # wget <FoundationDB_RPM_URL>
-        # dnf install -y <FoundationDB_RPM_FILE>
 
     - name: Install Rust manually via rustup
       run: |
-        # rustup 是一个跨平台的 Rust 安装工具，在所有这些容器中都能正常工作。
         echo "Installing Rust via rustup for ${{ matrix.os_image }}..."
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        # 将 Cargo 的 bin 目录添加到 PATH 中，以便后续步骤能找到 cargo 命令
         echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
     - name: Build stalwart (SQLite backend) on ${{ matrix.os_image }}
       run: |
-        # 进入 stalwart 项目目录
         echo "Changing directory to stalwart and building for ${{ matrix.os_image }}..."
         cd stalwart
-        # 使用 cargo 构建 stalwart。由于 ~/.cargo/bin 已添加到 PATH，可以直接使用 cargo 命令。
-        # --manifest-path=crates/main/Cargo.toml 指定了主 crate 的路径。
-        # --release 选项用于构建优化过的发布版本。
         cargo build --manifest-path=crates/main/Cargo.toml --release
 
     - name: Generate unique artifact name
-      id: generate_name # 为此步骤指定一个ID，以便后续步骤可以引用它的输出
+      id: generate_name
       run: |
-        # 从 matrix 中获取 os_image 字符串
         OS_IMAGE="${{ matrix.os_image }}"
-        
-        # 使用 Bash 字符串操作替换 '/' 为 '-'，然后替换 ':' 为 '-'
-        # Bash 的这种字符串替换方式被广泛支持
-        CLEANED_NAME="${OS_IMAGE//\//-}" # 替换所有 '/' 为 '-'
-        CLEANED_NAME="${CLEANED_NAME//:/-}" # 替换所有 ':' 为 '-'
-        
-        # 将清理后的名称设置为步骤的输出变量
+        CLEANED_NAME="${OS_IMAGE//\//-}"
+        CLEANED_NAME="${CLEANED_NAME//:/-}"
         echo "ARTIFACT_NAME=stalwart-mail-$CLEANED_NAME" >> "$GITHUB_OUTPUT"
         echo "Generated artifact name: stalwart-mail-$CLEANED_NAME"
 
     - name: Upload stalwart binary (${{ matrix.os_image }})
       uses: actions/upload-artifact@v4
       with:
-        # 使用上一个步骤的输出作为产物名称
         name: ${{ steps.generate_name.outputs.ARTIFACT_NAME }}
         path: stalwart/target/release/stalwart*
