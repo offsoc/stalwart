@@ -35,12 +35,14 @@ jobs:
         case "${{ matrix.os_image }}" in
           "rockylinux/rockylinux:9.6")
             echo "Configuring repositories for Rocky Linux 9.6..."
+            dnf install -y dnf-plugins-core
             dnf config-manager --set-enabled crb # Enable CRB for Rocky 9
             # Install EPEL for Rocky Linux 9
             dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
             ;;
           "rockylinux/rockylinux:10.0")
             echo "Configuring repositories for Rocky Linux 10.0..."
+            dnf install -y dnf-plugins-core
             dnf config-manager --set-enabled crb # Enable CRB for Rocky 10
             # Install EPEL for Rocky Linux 10
             # Note: epel-release-latest-10.noarch.rpm might not exist yet if RL10 is not out
