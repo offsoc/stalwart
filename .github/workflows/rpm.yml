@@ -9,16 +9,16 @@ on:
       - main
 
 jobs:
-  # 此 Job 用于构建和推送自定义 Rocky Linux 镜像到 GHCR
+  # This Job builds and pushes the custom Rocky Linux images to GHCR
   build-custom-images:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # 推送镜像到 GHCR 需要此权限
+      packages: write # Needed to push images to GHCR
     outputs:
-      # 传递镜像标签，以便下游 Job 可以使用它们
+      # Pass the image tags so downstream Jobs can use them
       rocky_9_6_image: ${{ steps.build_rocky_9_6.outputs.image }}
-      rocky_10_0_image: ${{ steps.build_rocky_10_0.outputs.image }} # 留着以备 10.0 稳定时使用
+      rocky_10_0_image: ${{ steps.build_rocky_10_0.outputs.image }} # Keep for future when 10.0 is stable
 
     steps:
     - name: Checkout repository
@@ -39,7 +39,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./Dockerfile.rocky # 使用你自定义的 Dockerfile
+        file: ./Dockerfile.rocky # Use your custom Dockerfile
         push: true
         tags: ghcr.io/${{ github.repository }}/rockylinux-custom:9.6-${{ github.sha }}
         build-args: |
@@ -47,7 +47,7 @@ jobs:
       outputs:
         image: ghcr.io/${{ github.repository }}/rockylinux-custom:9.6-${{ github.sha }}
 
-    - name: Build and Push Rocky Linux 10.0 custom image (在 10.0 发布前可能会失败)
+    - name: Build and Push Rocky Linux 10.0 custom image (will likely fail until 10.0 is released)
       id: build_rocky_10_0
       uses: docker/build-push-action@v5
       with:
@@ -59,22 +59,22 @@ jobs:
           ROCKY_VERSION=10.0
       outputs:
         image: ghcr.io/${{ github.repository }}/rockylinux-custom:10.0-${{ github.sha }}
-      continue-on-error: true # 允许此步骤失败，如果 10.0 镜像尚不可用
+      continue-on-error: true # Allow this step to fail if 10.0 image isn't available yet
 
   build-stalwart:
-    needs: build-custom-images # 此 Job 依赖于自定义镜像的构建和推送
+    needs: build-custom-images # This job depends on the custom images being built and pushed
     strategy:
       matrix:
         os_image:
-          # 使用自定义的 Rocky Linux 9.6 镜像
+          # Use the custom Rocky Linux 9.6 image
           - ${{ needs.build-custom-images.outputs.rocky_9_6_image }}
-          # 包含 Fedora 42 (已知稳定)
+          # Include Fedora 42 (known to be stable)
           - fedora:42
-          # 仅当自定义 10.0 镜像构建成功时才包含 Rocky 10.0。
-          # 这样可以确保如果构建 10.0 基础镜像失败（因为 rockylinux:10.0 还没发布），
-          # 这个 matrix 条目会被跳过，而不是导致整个 Job 失败。
+          # Only include Rocky 10.0 if the custom image build for it succeeded.
+          # This filter ensures that if building the 10.0 base image fails (because rockylinux:10.0 isn't out),
+          # this matrix entry is skipped rather than failing the whole job.
           - ${{ fromJson(format('{{"include": [{{"os_image": "{0}"}}]}}', needs.build-custom-images.outputs.rocky_10_0_image)).include[0].os_image if success() && needs.build-custom-images.outputs.rocky_10_0_image != '' }}
-          # 移除了 fedora:43，因为它尚未发布
+          # Removed fedora:43 as it's unreleased
           
     runs-on: ubuntu-latest
     container:
@@ -90,10 +90,10 @@ jobs:
         echo "Updating dnf package index and installing system dependencies for ${{ matrix.os_image }}..."
         dnf update -y
         
-        # 检查是否是我们自定义的 Rocky Linux 镜像
+        # Check if it's one of our custom Rocky Linux images
         if [[ "${{ matrix.os_image }}" =~ ^ghcr\.io/.*/rockylinux-custom:9\.6- ]]; then
           echo "Configuring repositories for custom Rocky Linux 9.6 image..."
-          # 这些在 Dockerfile.rocky 中已安装，但 CRB/EPEL 仍需在此处启用
+          # These are installed in Dockerfile.rocky, but CRB/EPEL still needed
           dnf config-manager --set-enabled crb
           dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
         elif [[ "${{ matrix.os_image }}" =~ ^ghcr\.io/.*/rockylinux-custom:10\.0- ]]; then
@@ -106,8 +106,8 @@ jobs:
           echo "Unknown OS image: ${{ matrix.os_image }}. Proceeding without specific repo config."
         fi
 
-        # 在配置完仓库后安装通用依赖项
-        # bash 现在由 Dockerfile.rocky 安装，但此处保留以保持 Fedora 的一致性
+        # Install common dependencies after repo configuration
+        # bash is now installed by Dockerfile.rocky, but kept here for Fedora consistency
         dnf install -y protobuf-devel sqlite-devel git gcc make
         
     - name: Clone stalwart project
@@ -128,8 +128,8 @@ jobs:
         echo "--------------------------------------------------------------------------------"
         echo "WARNING: Skipping FoundationDB client .deb package installation for ${{ matrix.os_image }}."
         echo "         .deb packages are NOT compatible with Rocky Linux or Fedora environments."
-        echo "         If FoundationDB support is critical for stalwart, you MUST:"
-        echo "         1. Find an official FoundationDB RPM package for your OS,"
+        "         If FoundationDB support is critical for stalwart, you MUST:"
+        "         1. Find an official FoundationDB RPM package for your OS,"
         "         2. OR Compile FoundationDB client libraries from source for your OS."
         echo "--------------------------------------------------------------------------------"
       shell: bash
