@@ -58,7 +58,7 @@ jobs:
       run: |
         echo "Installing Rust via rustup for ${{ matrix.os_image }}..."
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH" # Corrected this line to use $GITHUB_PATH
 
     - name: Build stalwart (SQLite backend) on ${{ matrix.os_image }}
       run: |
@@ -66,26 +66,17 @@ jobs:
         cd stalwart
         cargo build --manifest-path=crates/main/Cargo.toml --release
 
-    ---
-    # 新增步骤：生成唯一的产物名称
     - name: Generate unique artifact name
-      id: generate_name # 为此步骤指定一个ID，以便后续步骤可以引用它的输出
+      id: generate_name
       run: |
-        # 从 matrix 中获取 os_image 字符串
         OS_IMAGE="${{ matrix.os_image }}"
-        
-        # 使用 Bash 字符串操作替换 '/' 为 '-'，然后替换 ':' 为 '-'
-        # Bash 的这种字符串替换方式被广泛支持
-        CLEANED_NAME="${OS_IMAGE//\//-}" # 替换所有 '/' 为 '-'
-        CLEANED_NAME="${CLEANED_NAME//:/-}" # 替换所有 ':' 为 '-'
-        
-        # 将清理后的名称设置为步骤的输出变量
+        CLEANED_NAME="${OS_IMAGE//\//-}"
+        CLEANED_NAME="${CLEANED_NAME//:/-}"
         echo "ARTIFACT_NAME=stalwart-mail-$CLEANED_NAME" >> "$GITHUB_OUTPUT"
         echo "Generated artifact name: stalwart-mail-$CLEANED_NAME"
 
     - name: Upload stalwart binary (${{ matrix.os_image }})
       uses: actions/upload-artifact@v4
       with:
-        # 使用上一个步骤的输出作为产物名称
         name: ${{ steps.generate_name.outputs.ARTIFACT_NAME }}
         path: stalwart/target/release/stalwart*
