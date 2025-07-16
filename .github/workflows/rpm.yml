@@ -61,7 +61,7 @@ jobs:
         esac
 
         # Install common dependencies after repo configuration
-        dnf install -y protobuf-devel sqlite-devel git
+        dnf install -y protobuf-devel sqlite-devel git protobuf-compiler
         
     - name: Clone stalwart project
       run: |
