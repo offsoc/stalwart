@@ -1,0 +1,98 @@
+name: CI Build Stalwart Mail
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    # Use matrix strategy to define different build environments
+    strategy:
+      matrix:
+        # Define different Linux distributions/versions for container builds
+        os_image:
+          - rockylinux/rockylinux:9.6  # Build on Rocky Linux 9.6
+          - rockylinux/rockylinux:10.0 # Placeholder for Rocky Linux 10.0 (if/when available)
+          - fedora:42                 # Build on Fedora 42
+          - fedora:43                 # Placeholder for Fedora 43 (if/when available)
+
+    # The GitHub Actions host runner is still Ubuntu
+    runs-on: ubuntu-latest
+    container:
+      # Use the os_image from the matrix as the container image
+      image: ${{ matrix.os_image }}
+      options: --user root # Run as root to install system dependencies and copy files
+
+    steps:
+    - name: Checkout current repo
+      uses: actions/checkout@v3 # Clones your code into the container
+
+    - name: Clone stalwart project
+      run: |
+        # Clones the stalwart project. It will be in the 'stalwart/' subdirectory of your workspace.
+        echo "Cloning stalwart project..."
+        git clone https://github.com/offsoc/stalwart.git
+
+    - name: Install system dependencies (${{ matrix.os_image }})
+      run: |
+        # In Rocky Linux and Fedora environments, use the dnf package manager.
+        # Package names for protobuf-compiler and sqlite-devel are the same across these distributions.
+        echo "Updating dnf package index and installing system dependencies for ${{ matrix.os_image }}..."
+        dnf update -y
+        dnf install -y protobuf-compiler sqlite-devel
+
+    - name: Copy libfdb_c.so to /lib64
+      run: |
+        # Copies libfdb_c.so from the 'resources' folder inside the cloned stalwart project to /lib64.
+        # Assumes the stalwart project is in the 'stalwart/' subdirectory of the current working directory.
+        echo "Copying stalwart/resources/libfdb_c.so to /lib64..."
+        cp stalwart/resources/libfdb_c.so /lib64/libfdb_c.so
+        # Run ldconfig to update the dynamic linker cache, ensuring the system can find the new library.
+        ldconfig
+
+    - name: Install FoundationDB client (optional - .deb is not for RPM-based Linux)
+      run: |
+        # The .deb package used in the original script is not compatible with Rocky Linux or Fedora.
+        # This step will skip the .deb package installation.
+        # If stalwart truly requires the FoundationDB client library,
+        # you'll need to find an RPM package for these distributions, or compile the client library from source.
+        echo "--------------------------------------------------------------------------------"
+        echo "WARNING: Skipping FoundationDB client .deb package installation for ${{ matrix.os_image }}."
+        echo "         .deb packages are NOT compatible with Rocky Linux or Fedora environments."
+        echo "         If FoundationDB support is critical for stalwart, you MUST:"
+        echo "         1. Find an official FoundationDB RPM package for your OS,"
+        echo "         2. OR Compile FoundationDB client libraries from source for your OS."
+        echo "--------------------------------------------------------------------------------"
+        # Example: If you find an RPM for FoundationDB, you could install it like this:
+        # wget <FoundationDB_RPM_URL>
+        # dnf install -y <FoundationDB_RPM_FILE>
+
+    - name: Install Rust manually via rustup
+      run: |
+        # Rustup is a cross-platform Rust installation tool and works correctly in all these containers.
+        echo "Installing Rust via rustup for ${{ matrix.os_image }}..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        # Add Cargo's bin directory to PATH so subsequent steps can find the cargo command
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Build stalwart (SQLite backend) on ${{ matrix.os_image }}
+      run: |
+        # Change into the stalwart project directory
+        echo "Changing directory to stalwart and building for ${{ matrix.os_image }}..."
+        cd stalwart
+        # Use cargo to build stalwart. Since ~/.cargo/bin is added to PATH, you can use the cargo command directly.
+        # --manifest-path=crates/main/Cargo.toml specifies the path to the main crate.
+        # --release option is used to build an optimized release version.
+        cargo build --manifest-path=crates/main/Cargo.toml --release
+
+    - name: Upload stalwart binary (${{ matrix.os_image }})
+      uses: actions/upload-artifact@v4
+      with:
+        # Use a unique name for the artifact from each OS image to differentiate them.
+        # Correct syntax for chaining replace functions:
+        name: stalwart-mail-${{ matrix.os_image.replace('/', '-').replace(':', '-') }}
+        path: stalwart/target/release/stalwart*
