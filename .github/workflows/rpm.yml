@@ -27,16 +27,16 @@ jobs:
     - name: Checkout current repo
       uses: actions/checkout@v3
 
-    - name: Clone stalwart project
-      run: |
-        echo "Cloning stalwart project..."
-        git clone https://github.com/offsoc/stalwart.git
-
     - name: Install system dependencies (${{ matrix.os_image }})
       run: |
         echo "Updating dnf package index and installing system dependencies for ${{ matrix.os_image }}..."
         dnf update -y
-        dnf install -y protobuf-compiler sqlite-devel
+        dnf install -y protobuf-compiler sqlite-devel git
+        
+    - name: Clone stalwart project
+      run: |
+        echo "Cloning stalwart project..."
+        git clone https://github.com/offsoc/stalwart.git
 
     - name: Copy libfdb_c.so to /lib64
       run: |
