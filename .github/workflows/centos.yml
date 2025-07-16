@@ -1,0 +1,58 @@
+name: CI Build Stalwart Mail
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: centos/stream9:latest
+      options: --user root
+
+    steps:
+    - name: Checkout current repo
+      uses: actions/checkout@v3
+
+    - name: Clone stalwart project
+      run: |
+        git clone https://github.com/offsoc/stalwart.git
+
+    - name: Install system dependencies (Centos Stream 9)
+      run: |
+        dnf update -y
+        dnf install -y protobuf-compiler sqlite-devel
+
+    - name: Copy libfdb_c.so to /lib64
+      run: |
+        # 将 libfdb_c.so 从克隆的 stalwart 项目内的 resources 文件夹复制到 /lib64
+        echo "Copying stalwart/resources/libfdb_c.so to /lib64..."
+        cp stalwart/resources/libfdb_c.so /lib64/libfdb_c.so
+        # 运行 ldconfig 更新动态链接器缓存，确保系统能找到新库
+        ldconfig
+
+    - name: Install FoundationDB client (optional - .deb is not for CentOS/RHEL)
+      run: |
+        echo "Skipping FoundationDB client installation as .deb packages are not compatible with CentOS/RHEL."
+        echo "If FoundationDB support is required, please find an RPM package or compile it from source for CentOS/RHEL."
+
+    - name: Install Rust manually via rustup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Build stalwart (SQLite backend)
+      run: |
+        cd stalwart
+        cargo build --manifest-path=crates/main/Cargo.toml --release
+
+    - name: Upload stalwart binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: stalwart-mail
+        path: stalwart/target/release/stalwart*
