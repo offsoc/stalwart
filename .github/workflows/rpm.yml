@@ -10,56 +10,56 @@ on:
 
 jobs:
   build:
-    # Use matrix strategy to define different build environments
+    # 使用 matrix 策略来定义不同的构建环境
     strategy:
       matrix:
-        # Define different Linux distributions/versions for container builds
+        # 定义不同的 Linux 发行版/版本，用于在容器中构建
         os_image:
-          - rockylinux/rockylinux:9.6  # Build on Rocky Linux 9.6
-          - rockylinux/rockylinux:10.0 # Placeholder for Rocky Linux 10.0 (if/when available)
-          - fedora:42                 # Build on Fedora 42
-          - fedora:43                 # Placeholder for Fedora 43 (if/when available)
+          - rockylinux/rockylinux:9.6  # 基于 Rocky Linux 9.6 进行构建
+          - rockylinux/rockylinux:10.0 # 预留给 Rocky Linux 10.0 (一旦发布并有可用镜像)
+          - fedora:42                 # 基于 Fedora 42 进行构建
+          - fedora:43                 # 预留给 Fedora 43 (尚未发布，但可用于未来准备)
 
-    # The GitHub Actions host runner is still Ubuntu
+    # runs-on 仍然是 GitHub Actions 的宿主机 (Ubuntu)
     runs-on: ubuntu-latest
     container:
-      # Use the os_image from the matrix as the container image
+      # 使用 matrix 定义的 os_image 作为容器镜像
       image: ${{ matrix.os_image }}
-      options: --user root # Run as root to install system dependencies and copy files
+      options: --user root # 以 root 用户运行，以便安装系统依赖和复制文件
 
     steps:
     - name: Checkout current repo
-      uses: actions/checkout@v3 # Clones your code into the container
+      uses: actions/checkout@v3 # 将你的代码克隆到容器内部
 
     - name: Clone stalwart project
       run: |
-        # Clones the stalwart project. It will be in the 'stalwart/' subdirectory of your workspace.
+        # 克隆 stalwart 项目。它将位于工作目录的 'stalwart/' 子目录中。
         echo "Cloning stalwart project..."
         git clone https://github.com/offsoc/stalwart.git
 
     - name: Install system dependencies (${{ matrix.os_image }})
       run: |
-        # In Rocky Linux and Fedora environments, use the dnf package manager.
-        # Package names for protobuf-compiler and sqlite-devel are the same across these distributions.
+        # 在 Rocky Linux 和 Fedora 环境中，都使用 dnf 包管理器。
+        # protobuf-compiler 和 sqlite-devel 的包名在这两个系列中是相同的。
         echo "Updating dnf package index and installing system dependencies for ${{ matrix.os_image }}..."
         dnf update -y
         dnf install -y protobuf-compiler sqlite-devel
 
     - name: Copy libfdb_c.so to /lib64
       run: |
-        # Copies libfdb_c.so from the 'resources' folder inside the cloned stalwart project to /lib64.
-        # Assumes the stalwart project is in the 'stalwart/' subdirectory of the current working directory.
+        # 将 libfdb_c.so 从克隆的 stalwart 项目内的 resources 文件夹复制到 /lib64
+        # 假设 stalwart 项目已在当前工作目录的 'stalwart/' 子目录中。
         echo "Copying stalwart/resources/libfdb_c.so to /lib64..."
         cp stalwart/resources/libfdb_c.so /lib64/libfdb_c.so
-        # Run ldconfig to update the dynamic linker cache, ensuring the system can find the new library.
+        # 运行 ldconfig 以更新动态链接器缓存，确保系统能找到新库。
         ldconfig
 
     - name: Install FoundationDB client (optional - .deb is not for RPM-based Linux)
       run: |
-        # The .deb package used in the original script is not compatible with Rocky Linux or Fedora.
-        # This step will skip the .deb package installation.
-        # If stalwart truly requires the FoundationDB client library,
-        # you'll need to find an RPM package for these distributions, or compile the client library from source.
+        # 原始脚本中使用的 .deb 包不兼容 Rocky Linux 或 Fedora 系统。
+        # 因此，此步骤将跳过 .deb 包的安装。
+        # 如果 stalwart 确实需要 FoundationDB 客户端库，
+        # 你需要找到适用于这些发行版的 RPM 包，或者从源代码编译 FoundationDB 客户端库。
         echo "--------------------------------------------------------------------------------"
         echo "WARNING: Skipping FoundationDB client .deb package installation for ${{ matrix.os_image }}."
         echo "         .deb packages are NOT compatible with Rocky Linux or Fedora environments."
@@ -67,32 +67,32 @@ jobs:
         echo "         1. Find an official FoundationDB RPM package for your OS,"
         echo "         2. OR Compile FoundationDB client libraries from source for your OS."
         echo "--------------------------------------------------------------------------------"
-        # Example: If you find an RPM for FoundationDB, you could install it like this:
+        # 示例：如果你找到了 FoundationDB 的 RPM 包，可以这样安装：
         # wget <FoundationDB_RPM_URL>
         # dnf install -y <FoundationDB_RPM_FILE>
 
     - name: Install Rust manually via rustup
       run: |
-        # Rustup is a cross-platform Rust installation tool and works correctly in all these containers.
+        # rustup 是一个跨平台的 Rust 安装工具，在所有这些容器中都能正常工作。
         echo "Installing Rust via rustup for ${{ matrix.os_image }}..."
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        # Add Cargo's bin directory to PATH so subsequent steps can find the cargo command
+        # 将 Cargo 的 bin 目录添加到 PATH 中，以便后续步骤能找到 cargo 命令
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Build stalwart (SQLite backend) on ${{ matrix.os_image }}
       run: |
-        # Change into the stalwart project directory
+        # 进入 stalwart 项目目录
         echo "Changing directory to stalwart and building for ${{ matrix.os_image }}..."
         cd stalwart
-        # Use cargo to build stalwart. Since ~/.cargo/bin is added to PATH, you can use the cargo command directly.
-        # --manifest-path=crates/main/Cargo.toml specifies the path to the main crate.
-        # --release option is used to build an optimized release version.
+        # 使用 cargo 构建 stalwart。由于 ~/.cargo/bin 已添加到 PATH，可以直接使用 cargo 命令。
+        # --manifest-path=crates/main/Cargo.toml 指定了主 crate 的路径。
+        # --release 选项用于构建优化过的发布版本。
         cargo build --manifest-path=crates/main/Cargo.toml --release
 
     - name: Upload stalwart binary (${{ matrix.os_image }})
       uses: actions/upload-artifact@v4
       with:
-        # Use a unique name for the artifact from each OS image to differentiate them.
-        # Correct syntax for chaining replace functions:
-        name: stalwart-mail-${{ matrix.os_image.replace('/', '-').replace(':', '-') }}
+        # 为每个 OS 镜像的产物使用唯一的名称，以便区分。
+        # 正确的链式 replace 函数语法：嵌套调用。
+        name: stalwart-mail-${{ replace(replace(matrix.os_image, '/', '-'), ':', '-') }}
         path: stalwart/target/release/stalwart*
