@@ -1,4 +1,4 @@
-name: CI Build Stalwart Mail
+name: CI Build Stalwart Mail On RPM
 
 on:
   push:
