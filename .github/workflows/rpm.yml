@@ -13,10 +13,11 @@ jobs:
     strategy:
       matrix:
         os_image:
-          - rockylinux/rockylinux:9.6
-          - rockylinux/rockylinux:10.0 # Placeholder for Rocky Linux 10.0 (if/when available)
+          # Changed to CentOS Stream equivalents for better compatibility
+          - centos:stream9
+          - centos:stream10 # This might still be a placeholder/beta image
           - fedora:42
-          - fedora:43 # Placeholder for Fedora 43 (if/when available)
+          - fedora:43 # Placeholder
 
     runs-on: ubuntu-latest
     container:
@@ -33,24 +34,23 @@ jobs:
         dnf update -y
         
         case "${{ matrix.os_image }}" in
-          "rockylinux/rockylinux:9.6")
-            echo "Configuring repositories for Rocky Linux 9.6..."
+          "centos:stream9") # Now targeting CentOS Stream 9
+            echo "Configuring repositories for CentOS Stream 9..."
             dnf install -y dnf-plugins-core
-            dnf config-manager --set-enabled crb # Enable CRB for Rocky 9
-            # Install EPEL for Rocky Linux 9
+            # CentOS Stream uses 'crb' as well, or sometimes 'powertools'
+            # Let's try crb first
+            dnf config-manager --set-enabled crb
             dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
             ;;
-          "rockylinux/rockylinux:10.0")
-            echo "Configuring repositories for Rocky Linux 10.0..."
+          "centos:stream10") # Now targeting CentOS Stream 10
+            echo "Configuring repositories for CentOS Stream 10..."
             dnf install -y dnf-plugins-core
-            dnf config-manager --set-enabled crb # Enable CRB for Rocky 10
-            # Install EPEL for Rocky Linux 10
-            # Note: epel-release-latest-10.noarch.rpm might not exist yet if RL10 is not out
+            dnf config-manager --set-enabled crb
+            # EPEL 10 for Stream 10 might be needed. Adjust URL if necessary.
             dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
             ;;
           "fedora:42")
             echo "Fedora 42 already has core development packages. No extra repos needed."
-            # Fedora usually doesn't need EPEL or CRB as their core repos are comprehensive.
             ;;
           "fedora:43")
             echo "Fedora 43 (placeholder) already has core development packages. No extra repos needed."
@@ -61,18 +61,20 @@ jobs:
         esac
 
         # Install common dependencies after repo configuration
-        dnf install -y protobuf-devel sqlite-devel git protobuf-compiler gcc make bash
+        dnf install -y protobuf-devel sqlite-devel git gcc make bash
         
     - name: Clone stalwart project
       run: |
         echo "Cloning stalwart project..."
         git clone https://github.com/offsoc/stalwart.git
+      shell: bash
 
     - name: Copy libfdb_c.so to /lib64
       run: |
         echo "Copying stalwart/resources/libfdb_c.so to /lib64..."
         cp stalwart/resources/libfdb_c.so /lib64/libfdb_c.so
         ldconfig
+      shell: bash
 
     - name: Install FoundationDB client (optional - .deb is not for RPM-based Linux)
       run: |
@@ -83,18 +85,21 @@ jobs:
         echo "         1. Find an official FoundationDB RPM package for your OS,"
         echo "         2. OR Compile FoundationDB client libraries from source for your OS."
         echo "--------------------------------------------------------------------------------"
+      shell: bash
 
     - name: Install Rust manually via rustup
       run: |
         echo "Installing Rust via rustup for ${{ matrix.os_image }}..."
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
         echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      shell: bash
 
     - name: Build stalwart (SQLite backend) on ${{ matrix.os_image }}
       run: |
         echo "Changing directory to stalwart and building for ${{ matrix.os_image }}..."
         cd stalwart
         cargo build --manifest-path=crates/main/Cargo.toml --release
+      shell: bash
 
     - name: Generate unique artifact name
       id: generate_name
@@ -104,6 +109,7 @@ jobs:
         CLEANED_NAME="${CLEANED_NAME//:/-}"
         echo "ARTIFACT_NAME=stalwart-mail-$CLEANED_NAME" >> "$GITHUB_OUTPUT"
         echo "Generated artifact name: stalwart-mail-$CLEANED_NAME"
+      shell: bash
 
     - name: Upload stalwart binary (${{ matrix.os_image }})
       uses: actions/upload-artifact@v4
