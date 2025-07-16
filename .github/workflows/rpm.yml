@@ -13,11 +13,12 @@ jobs:
     strategy:
       matrix:
         os_image:
-          # Changed to CentOS Stream equivalents for better compatibility
+          # 使用稳定且可用的 CentOS Stream 9 作为 Rocky Linux 9 的等效版本
           - centos:stream9
-          - centos:stream10 # This might still be a placeholder/beta image
+          # Fedora 42 是当前稳定或最新版本
           - fedora:42
-          - fedora:43 # Placeholder
+          # 移除了 centos:stream10 和 fedora:43，因为它们尚未正式发布/可用作 Docker 镜像。
+          # 它们发布且稳定后，你可以再添加回来。
 
     runs-on: ubuntu-latest
     container:
@@ -34,33 +35,22 @@ jobs:
         dnf update -y
         
         case "${{ matrix.os_image }}" in
-          "centos:stream9") # Now targeting CentOS Stream 9
+          "centos:stream9")
             echo "Configuring repositories for CentOS Stream 9..."
-            dnf install -y dnf-plugins-core
-            # CentOS Stream uses 'crb' as well, or sometimes 'powertools'
-            # Let's try crb first
-            dnf config-manager --set-enabled crb
-            dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
-            ;;
-          "centos:stream10") # Now targeting CentOS Stream 10
-            echo "Configuring repositories for CentOS Stream 10..."
-            dnf install -y dnf-plugins-core
-            dnf config-manager --set-enabled crb
-            # EPEL 10 for Stream 10 might be needed. Adjust URL if necessary.
-            dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+            dnf install -y dnf-plugins-core # 安装 dnf-plugins-core 以获取 config-manager
+            dnf config-manager --set-enabled crb # 为 Stream 9 启用 CRB（等同于 Rocky 9 的 PowerTools）
+            dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm # 安装 EPEL
             ;;
           "fedora:42")
             echo "Fedora 42 already has core development packages. No extra repos needed."
             ;;
-          "fedora:43")
-            echo "Fedora 43 (placeholder) already has core development packages. No extra repos needed."
-            ;;
           *)
-            echo "Unknown OS image: ${{ matrix.os_image }}. Proceeding without specific repo config."
+            # 理论上，当 matrix 固定后，不应该命中这个回退
+            echo "Unknown or unsupported OS image: ${{ matrix.os_image }}. Proceeding without specific repo config."
             ;;
         esac
 
-        # Install common dependencies after repo configuration
+        # 在配置完仓库后安装通用依赖项
         dnf install -y protobuf-devel sqlite-devel git gcc make bash
         
     - name: Clone stalwart project
@@ -83,7 +73,7 @@ jobs:
         echo "         .deb packages are NOT compatible with Rocky Linux or Fedora environments."
         echo "         If FoundationDB support is critical for stalwart, you MUST:"
         echo "         1. Find an official FoundationDB RPM package for your OS,"
-        echo "         2. OR Compile FoundationDB client libraries from source for your OS."
+        "         2. OR Compile FoundationDB client libraries from source for your OS."
         echo "--------------------------------------------------------------------------------"
       shell: bash
 
