@@ -1,0 +1,14 @@
+# Dockerfile.rocky
+ARG ROCKY_VERSION
+FROM rockylinux/rockylinux:${ROCKY_VERSION}
+
+# 这将确保 bash 已安装并可用。
+# 它还包括 coreutils，用于基本的 shell 工具，如 'ls', 'cp' 等，
+# 这些在 shell 环境中通常是必需的。
+RUN dnf update -y && \
+    dnf install -y bash coreutils --setopt=tsflags=nodocs && \
+    dnf clean all
+
+# 确保 /bin/bash 是一个常用的 shell（通常是从 /bin/sh 软链接而来）
+# 这可能已经是这种情况了，但如果 PATH 被精简，显式链接会有帮助。
+RUN ln -sf /bin/bash /bin/sh
