@@ -4,6 +4,8 @@ WORKDIR /build
 
 # 安装构建依赖和 rust
 RUN dnf update -y && \
+    dnf install -y dnf-plugins-core && \
+    dnf config-manager --set-enabled crb && \
     dnf install -y clang gcc make binutils curl git protobuf-devel sqlite-devel protobuf-compiler && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     . $HOME/.cargo/env && rustup default stable

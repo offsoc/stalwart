@@ -115,18 +115,6 @@ jobs:
           echo "Rocky 基础镜像已包含 libfdb_c.so，无需拷贝。"
         fi
 
-    - name: Install FoundationDB client (optional - .deb is not for RPM-based Linux)
-      if: ${{ matrix.os_image != '' }}
-      run: |
-        echo "--------------------------------------------------------------------------------"
-        echo "WARNING: Skipping FoundationDB client .deb package installation for ${{ matrix.os_image }}."
-        echo "         .deb packages are NOT compatible with Rocky Linux or Fedora environments."
-        "         If FoundationDB support is critical for stalwart, you MUST:"
-        "         1. Find an official FoundationDB RPM package for your OS,"
-        "         2. OR Compile FoundationDB client libraries from source for your OS."
-        echo "--------------------------------------------------------------------------------"
-      shell: bash
-
     - name: Install Rust manually via rustup
       if: ${{ matrix.os_image != '' }}
       run: |
