@@ -75,7 +75,7 @@ jobs:
           # Only include Rocky 10.0 if the custom image build for it succeeded.
           # This filter ensures that if building the 10.0 base image fails (because rockylinux:10.0 isn't out),
           # this matrix entry is skipped rather than failing the whole job.
-          - ${{ fromJson(format('{{"include": [{{"os_image": "{0}"}}]}}', needs.build-custom-images.outputs.rocky_10_0_image)).include[0].os_image if success() && needs.build-custom-images.outputs.rocky_10_0_image != '' }}
+          - ${{ needs.build-custom-images.outputs.rocky_10_0_image }}
           # Removed fedora:43 as it's unreleased
           
     runs-on: ubuntu-latest
@@ -85,9 +85,11 @@ jobs:
 
     steps:
     - name: Checkout current repo
+      if: ${{ matrix.os_image != '' }}
       uses: actions/checkout@v3
 
     - name: Install system dependencies (${{ matrix.os_image }})
+      if: ${{ matrix.os_image != '' }}
       run: |
         echo "Updating dnf package index and installing system dependencies for ${{ matrix.os_image }}..."
         dnf update -y
@@ -101,12 +103,14 @@ jobs:
         fi
 
     - name: Clone stalwart project
+      if: ${{ matrix.os_image != '' }}
       run: |
         echo "Cloning stalwart project..."
         git clone https://github.com/offsoc/stalwart.git
       shell: bash
 
     - name: Copy libfdb_c.so to /lib64
+      if: ${{ matrix.os_image != '' }}
       run: |
         if [[ "${{ matrix.os_image }}" == "fedora:42" || "${{ matrix.os_image }}" == "fedora:43" ]]; then
           echo "Copying stalwart/resources/libfdb_c.so to /lib64..."
@@ -117,6 +121,7 @@ jobs:
         fi
 
     - name: Install FoundationDB client (optional - .deb is not for RPM-based Linux)
+      if: ${{ matrix.os_image != '' }}
       run: |
         echo "--------------------------------------------------------------------------------"
         echo "WARNING: Skipping FoundationDB client .deb package installation for ${{ matrix.os_image }}."
@@ -128,6 +133,7 @@ jobs:
       shell: bash
 
     - name: Install Rust manually via rustup
+      if: ${{ matrix.os_image != '' }}
       run: |
         echo "Installing Rust via rustup for ${{ matrix.os_image }}..."
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -135,6 +141,7 @@ jobs:
       shell: bash
 
     - name: Build stalwart (SQLite backend) on ${{ matrix.os_image }}
+      if: ${{ matrix.os_image != '' }}
       run: |
         echo "Changing directory to stalwart and building for ${{ matrix.os_image }}..."
         cd stalwart
@@ -142,6 +149,7 @@ jobs:
       shell: bash
 
     - name: Generate unique artifact name
+      if: ${{ matrix.os_image != '' }}
       id: generate_name
       run: |
         OS_IMAGE="${{ matrix.os_image }}"
@@ -152,6 +160,7 @@ jobs:
       shell: bash
 
     - name: Upload stalwart binary (${{ matrix.os_image }})
+      if: ${{ matrix.os_image != '' }}
       uses: actions/upload-artifact@v4
       with:
         name: ${{ steps.generate_name.outputs.ARTIFACT_NAME }}
