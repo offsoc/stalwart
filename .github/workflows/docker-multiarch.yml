@@ -44,6 +44,7 @@ jobs:
         id: tag
         run: |
           file=${{ matrix.dockerfile }}
+          platform=${{ matrix.platform }}
           case "$file" in
             Dockerfile) echo "tag=main" >> $GITHUB_OUTPUT ;;
             resources/Dockerfile.RHEL9.6) echo "tag=rhel9.6" >> $GITHUB_OUTPUT ;;
@@ -52,6 +53,8 @@ jobs:
             resources/Dockerfile.RHEL10) echo "tag=rhel10.0" >> $GITHUB_OUTPUT ;;
             *) echo "tag=custom" >> $GITHUB_OUTPUT ;;
           esac
+          safe_platform=$(echo "${platform}" | tr '/' '-')
+          echo "safe_platform=${safe_platform}" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -60,7 +63,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-${{ matrix.platform.replace('/', '-') }}
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-${{ steps.tag.outputs.safe_platform }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -68,7 +71,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stalwart-binaries-${{ steps.tag.outputs.tag }}-${{ matrix.platform }}
+          name: stalwart-binaries-${{ steps.tag.outputs.tag }}-${{ steps.tag.outputs.safe_platform }}
           path: |
             target/*/release/stalwart*
 
