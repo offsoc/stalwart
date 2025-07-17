@@ -16,10 +16,10 @@ RUN if [ "${ROCKY_VERSION%%.*}" = "9" ]; then \
       dnf install -y protobuf-devel sqlite-devel git gcc make || true; \
     fi
 
-# Rocky 10.x: 仅安装可用基础包，跳过crb/epel和部分开发依赖
+# Rocky 10.x: 仅安装可用基础包，git为必装，其他开发依赖可选
 RUN if [ "${ROCKY_VERSION%%.*}" = "10" ]; then \
-      echo "Skipping crb/epel for Rocky 10.x"; \
-      dnf install -y git gcc make || true; \
+      dnf install -y git || (dnf clean all && exit 1); \
+      dnf install -y gcc make || true; \
       dnf install -y protobuf-devel sqlite-devel || true; \
     fi
 
