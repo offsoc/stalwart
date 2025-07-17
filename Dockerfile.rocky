@@ -6,8 +6,18 @@ FROM rockylinux/rockylinux:${ROCKY_VERSION}
 # coreutils includes basic shell utilities like 'ls', 'cp', etc.
 # --setopt=tsflags=nodocs reduces image size by skipping documentation.
 RUN dnf update -y && \
-    dnf install -y bash coreutils --setopt=tsflags=nodocs && \
+    dnf install -y bash coreutils dnf-plugins-core && \
+    dnf config-manager --set-enabled crb && \
+    if [ "${ROCKY_VERSION%%.*}" = "9" ]; then \
+        dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm; \
+    elif [ "${ROCKY_VERSION%%.*}" = "10" ]; then \
+        dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm; \
+    fi && \
+    dnf install -y protobuf-devel sqlite-devel git gcc make && \
     dnf clean all
+
+COPY resources/libfdb_c.so /lib64/
+RUN ldconfig
 
 # Ensure /bin/sh points to /bin/bash for compatibility with scripts
 # that might explicitly call 'sh'.

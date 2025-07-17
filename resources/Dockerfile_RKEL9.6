@@ -13,6 +13,9 @@ RUN dnf update -y && \
     sh install.sh && \
     dnf clean all
 
+COPY resources/libfdb_c.so /lib64/
+RUN ldconfig
+
 # Expose the required ports
 EXPOSE 443
 EXPOSE 25

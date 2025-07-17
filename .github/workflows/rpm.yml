@@ -70,6 +70,8 @@ jobs:
           - ${{ needs.build-custom-images.outputs.rocky_9_6_image }}
           # Include Fedora 42 (known to be stable)
           - fedora:42
+          # Include Fedora 43
+          - fedora:43
           # Only include Rocky 10.0 if the custom image build for it succeeded.
           # This filter ensures that if building the 10.0 base image fails (because rockylinux:10.0 isn't out),
           # this matrix entry is skipped rather than failing the whole job.
@@ -90,26 +92,14 @@ jobs:
         echo "Updating dnf package index and installing system dependencies for ${{ matrix.os_image }}..."
         dnf update -y
         
-        # Check if it's one of our custom Rocky Linux images
-        if [[ "${{ matrix.os_image }}" =~ ^ghcr\.io/.*/rockylinux-custom:9\.6- ]]; then
-          echo "Configuring repositories for custom Rocky Linux 9.6 image..."
-          # These are installed in Dockerfile.rocky, but CRB/EPEL still needed
-          dnf config-manager --set-enabled crb
-          dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
-        elif [[ "${{ matrix.os_image }}" =~ ^ghcr\.io/.*/rockylinux-custom:10\.0- ]]; then
-          echo "Configuring repositories for custom Rocky Linux 10.0 image..."
-          dnf config-manager --set-enabled crb
-          dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
-        elif [[ "${{ matrix.os_image }}" == "fedora:42" ]]; then
-          echo "Fedora 42 already has core development packages. No extra repos needed."
+        # 仅对 Fedora 进行依赖安装，Rocky 基础镜像已包含全部依赖
+        if [[ "${{ matrix.os_image }}" == "fedora:42" || "${{ matrix.os_image }}" == "fedora:43" ]]; then
+          echo "Fedora already has core development packages. No extra repos needed."
+          dnf install -y protobuf-devel sqlite-devel git gcc make
         else
-          echo "Unknown OS image: ${{ matrix.os_image }}. Proceeding without specific repo config."
+          echo "Rocky 基础镜像已包含全部依赖，无需重复安装。"
         fi
 
-        # Install common dependencies after repo configuration
-        # bash is now installed by Dockerfile.rocky, but kept here for Fedora consistency
-        dnf install -y protobuf-devel sqlite-devel git gcc make
-        
     - name: Clone stalwart project
       run: |
         echo "Cloning stalwart project..."
@@ -118,10 +108,13 @@ jobs:
 
     - name: Copy libfdb_c.so to /lib64
       run: |
-        echo "Copying stalwart/resources/libfdb_c.so to /lib64..."
-        cp stalwart/resources/libfdb_c.so /lib64/libfdb_c.so
-        ldconfig
-      shell: bash
+        if [[ "${{ matrix.os_image }}" == "fedora:42" || "${{ matrix.os_image }}" == "fedora:43" ]]; then
+          echo "Copying stalwart/resources/libfdb_c.so to /lib64..."
+          cp stalwart/resources/libfdb_c.so /lib64/libfdb_c.so
+          ldconfig
+        else
+          echo "Rocky 基础镜像已包含 libfdb_c.so，无需拷贝。"
+        fi
 
     - name: Install FoundationDB client (optional - .deb is not for RPM-based Linux)
       run: |
