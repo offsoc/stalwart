@@ -60,7 +60,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-${{ matrix.platform }}
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-${{ matrix.platform.replace('/', '-') }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
