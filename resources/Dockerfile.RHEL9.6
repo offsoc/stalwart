@@ -14,7 +14,7 @@ COPY resources/libfdb_c.so /lib64/
 RUN chmod 755 /lib64/libfdb_c.so
 
 COPY . .
-RUN . $HOME/.cargo/env && cargo build --release -p stalwart --manifest-path=crates/main/Cargo.toml --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure nats enterprise"
+RUN . $HOME/.cargo/env && cargo build --release -p stalwart --manifest-path=crates/main/Cargo.toml 
 RUN . $HOME/.cargo/env && cargo build --release -p stalwart-cli
 RUN mkdir /output && cp target/release/stalwart /output/ && cp target/release/stalwart-cli /output/
 

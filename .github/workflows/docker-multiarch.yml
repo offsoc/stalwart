@@ -63,17 +63,38 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-${{ steps.tag.outputs.safe_platform }}
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Upload built binaries as artifact
-        if: always()
+      - name: Build Docker image locally for artifact export
+        run: |
+          docker build -f ${{ matrix.dockerfile }} -t stalwart-local:${{ steps.tag.outputs.tag }} .
+
+      - name: Save Docker image as tar
+        run: |
+          docker save -o stalwart-image-${{ steps.tag.outputs.tag }}.tar stalwart-local:${{ steps.tag.outputs.tag }}
+
+      - name: Upload Docker image tar as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: stalwart-binaries-${{ steps.tag.outputs.tag }}-${{ steps.tag.outputs.safe_platform }}
+          name: stalwart-image-${{ steps.tag.outputs.tag }}
+          path: stalwart-image-${{ steps.tag.outputs.tag }}.tar
+
+      - name: Extract binaries from image
+        run: |
+          id=$(docker create stalwart-local:${{ steps.tag.outputs.tag }})
+          docker cp $id:/usr/local/bin/stalwart ./stalwart-${{ steps.tag.outputs.tag }} || true
+          docker cp $id:/usr/local/bin/stalwart-cli ./stalwart-cli-${{ steps.tag.outputs.tag }} || true
+          docker rm $id
+
+      - name: Upload binaries as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stalwart-binaries-${{ steps.tag.outputs.tag }}
           path: |
-            target/*/release/stalwart*
+            stalwart-${{ steps.tag.outputs.tag }}
+            stalwart-cli-${{ steps.tag.outputs.tag }}
 
 # 说明：
 # 1. 修正了 Dockerfile 路径拼写错误。
