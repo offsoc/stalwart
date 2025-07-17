@@ -16,9 +16,8 @@ jobs:
       contents: read
       packages: write # Needed to push images to GHCR
     outputs:
-      # Pass the image tags so downstream Jobs can use them
-      rocky_9_6_image: ${{ steps.build_rocky_9_6.outputs.image }}
-      rocky_10_0_image: ${{ steps.build_rocky_10_0.outputs.image }} # Keep for future when 10.0 is stable
+      rocky_9_6_image: ghcr.io/${{ github.repository }}/rockylinux-custom:9.6-${{ github.sha }}
+      rocky_10_0_image: ghcr.io/${{ github.repository }}/rockylinux-custom:10.0-${{ github.sha }}
 
     steps:
     - name: Checkout repository
@@ -44,8 +43,6 @@ jobs:
         tags: ghcr.io/${{ github.repository }}/rockylinux-custom:9.6-${{ github.sha }}
         build-args: |
           ROCKY_VERSION=9.6
-      outputs:
-        image: ghcr.io/${{ github.repository }}/rockylinux-custom:9.6-${{ github.sha }}
 
     - name: Build and Push Rocky Linux 10.0 custom image (will likely fail until 10.0 is released)
       id: build_rocky_10_0
@@ -57,8 +54,6 @@ jobs:
         tags: ghcr.io/${{ github.repository }}/rockylinux-custom:10.0-${{ github.sha }}
         build-args: |
           ROCKY_VERSION=10.0
-      outputs:
-        image: ghcr.io/${{ github.repository }}/rockylinux-custom:10.0-${{ github.sha }}
       continue-on-error: true # Allow this step to fail if 10.0 image isn't available yet
 
   build-stalwart:
