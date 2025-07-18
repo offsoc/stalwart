@@ -10,7 +10,8 @@ RUN dnf update -y && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     . $HOME/.cargo/env && rustup default stable
 
-COPY resources/libfdb_c.so /lib64/
+ARG TARGETARCH
+COPY resources/libfdb_c.${TARGETARCH}.so /lib64/libfdb_c.so
 RUN chmod 755 /lib64/libfdb_c.so
 
 COPY . .
@@ -21,10 +22,12 @@ RUN mkdir /output && cp target/release/stalwart /output/ && cp target/release/st
 FROM registry.access.redhat.com/ubi10:10.0-1747220028
 WORKDIR /opt/stalwart
 RUN dnf update -y && dnf install -y ca-certificates && dnf clean all
+ARG TARGETARCH
+COPY resources/libfdb_c.${TARGETARCH}.so /lib64/libfdb_c.so
+RUN chmod 755 /lib64/libfdb_c.so
 COPY --from=builder /output/stalwart /usr/local/bin
 COPY --from=builder /output/stalwart-cli /usr/local/bin
 COPY ./resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY resources/libfdb_c.so /lib64/
 RUN chmod -R 755 /usr/local/bin && ldconfig
 CMD ["/usr/local/bin/stalwart"]
 VOLUME [ "/opt/stalwart" ]
