@@ -46,7 +46,7 @@ jobs:
           file=${{ matrix.dockerfile }}
           platform=${{ matrix.platform }}
           case "$file" in
-            Dockerfile) echo "tag=main" >> $GITHUB_OUTPUT ;;
+            Dockerfile) echo "tag=bookworm" >> $GITHUB_OUTPUT ;;
             resources/Dockerfile.RHEL9.6) echo "tag=rhel9.6" >> $GITHUB_OUTPUT ;;
             resources/Dockerfile.RKEL9.6) echo "tag=rkel9.6" >> $GITHUB_OUTPUT ;;
             resources/Dockerfile.RKEL10.0) echo "tag=rkel10.0" >> $GITHUB_OUTPUT ;;
@@ -78,7 +78,7 @@ jobs:
       - name: Upload Docker image tar as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: stalwart-image-${{ steps.tag.outputs.tag }}
+          name: stalwart-image-${{ steps.tag.outputs.tag }}-${{ steps.tag.outputs.safe_platform }}
           path: stalwart-image-${{ steps.tag.outputs.tag }}.tar
 
       - name: Extract binaries from image
@@ -91,7 +91,7 @@ jobs:
       - name: Upload binaries as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: stalwart-binaries-${{ steps.tag.outputs.tag }}
+          name: stalwart-binaries-${{ steps.tag.outputs.tag }}-${{ steps.tag.outputs.safe_platform }}
           path: |
             stalwart-${{ steps.tag.outputs.tag }}
             stalwart-cli-${{ steps.tag.outputs.tag }}
