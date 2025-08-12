@@ -18,6 +18,7 @@ use tokio::sync::mpsc;
 use utils::map::bitmap::Bitmap;
 
 use crate::config::smtp::{
+    queue::QueueName,
     report::AggregateFrequency,
     resolver::{Policy, Tlsa},
 };
@@ -69,6 +70,8 @@ pub enum StateEvent {
 #[derive(Debug)]
 pub enum BroadcastEvent {
     StateChange(StateChange),
+    InvalidateAccessTokens(Vec<u32>),
+    InvalidateDavCache(Vec<u32>),
     ReloadSettings,
     ReloadBlockedIps,
 }
@@ -104,16 +107,18 @@ pub enum QueueEvent {
     Refresh,
     WorkerDone {
         queue_id: u64,
+        queue_name: QueueName,
         status: QueueEventStatus,
     },
     Paused(bool),
+    ReloadSettings,
     Stop,
 }
 
 #[derive(Debug)]
 pub enum QueueEventStatus {
     Completed,
-    Locked { until: u64 },
+    Locked,
     Deferred,
 }
 

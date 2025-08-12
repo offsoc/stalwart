@@ -56,6 +56,7 @@ async fn generate_dsn() {
     let mut message = MessageWrapper {
         queue_id: 0,
         span_id: 0,
+        is_multi_queue: false,
         queue_name: QueueName::default(),
         message: Message {
             size,
@@ -63,11 +64,8 @@ async fn generate_dsn() {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs()),
             return_path: "sender@foobar.org".into(),
-            return_path_lcase: "".into(),
-            return_path_domain: "foobar.org".into(),
             recipients: vec![Recipient {
                 address: "foobar@example.org".into(),
-                address_lcase: "foobar@example.org".into(),
                 status: Status::PermanentFailure(ErrorDetails {
                     entity: "mx.example.org".into(),
                     details: Error::UnexpectedResponse(UnexpectedResponse {
@@ -83,7 +81,7 @@ async fn generate_dsn() {
                 orcpt: None,
                 retry: Schedule::now(),
                 notify: Schedule::now(),
-                expires: QueueExpiry::Duration(10),
+                expires: QueueExpiry::Ttl(10),
                 queue: QueueName::default(),
             }],
             flags: 0,
@@ -124,7 +122,6 @@ async fn generate_dsn() {
     // Success DSN
     message.message.recipients.push(Recipient {
         address: "jane@example.org".into(),
-        address_lcase: "jane@example.org".into(),
         status: Status::Completed(HostResponse {
             hostname: "mx2.example.org".into(),
             response: Response {
@@ -137,7 +134,7 @@ async fn generate_dsn() {
         orcpt: None,
         retry: Schedule::now(),
         notify: Schedule::now(),
-        expires: QueueExpiry::Duration(10),
+        expires: QueueExpiry::Ttl(10),
         queue: QueueName::default(),
     });
     core.send_dsn(&mut message).await;
@@ -147,7 +144,6 @@ async fn generate_dsn() {
     // Delay DSN
     message.message.recipients.push(Recipient {
         address: "john.doe@example.org".into(),
-        address_lcase: "john.doe@example.org".into(),
         status: Status::TemporaryFailure(ErrorDetails {
             entity: "mx.domain.org".into(),
             details: Error::ConnectionError("Connection timeout".into()),
@@ -156,7 +152,7 @@ async fn generate_dsn() {
         orcpt: Some("jdoe@example.org".into()),
         retry: Schedule::now(),
         notify: Schedule::now(),
-        expires: QueueExpiry::Duration(10),
+        expires: QueueExpiry::Ttl(10),
         queue: QueueName::default(),
     });
     core.send_dsn(&mut message).await;

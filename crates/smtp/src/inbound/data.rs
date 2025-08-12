@@ -9,7 +9,7 @@ use crate::{
     core::{Session, SessionAddress, State},
     inbound::milter::Modification,
     queue::{
-        self, DMARC_AUTHENTICATED, Message, MessageSource, MessageWrapper, QueueEnvelope, Schedule,
+        self, DomainPart, Message, MessageSource, MessageWrapper, QueueEnvelope,
         quota::HasQueueQuota,
     },
     reporting::analysis::AnalyzeReport,
@@ -668,15 +668,12 @@ impl<T: SessionStream> Session<T> {
 
             // Queue message
             let source = if !self.is_authenticated() {
-                MessageSource::Unauthenticated
+                MessageSource::Unauthenticated(
+                    dmarc_result.is_some_and(|result| result == DmarcResult::Pass),
+                )
             } else {
                 MessageSource::Authenticated
             };
-            if self.is_authenticated()
-                || dmarc_result.is_some_and(|result| result == DmarcResult::Pass)
-            {
-                message.message.flags |= DMARC_AUTHENTICATED;
-            }
             if message
                 .queue(
                     Some(&headers),
@@ -713,9 +710,7 @@ impl<T: SessionStream> Session<T> {
             .map_or(0, |d| d.as_secs());
         let mut message = Message {
             created,
-            return_path: mail_from.address,
-            return_path_lcase: mail_from.address_lcase,
-            return_path_domain: mail_from.domain,
+            return_path: mail_from.address.to_lowercase_domain(),
             recipients: Vec::with_capacity(rcpt_to.len()),
             flags: mail_from.flags,
             priority: self.data.priority,
@@ -731,30 +726,25 @@ impl<T: SessionStream> Session<T> {
         let future_release = self.data.future_release;
         rcpt_to.sort_unstable();
         for rcpt in rcpt_to {
-            let rcpt_idx = message.recipients.len();
-            message.recipients.push(queue::Recipient {
-                address: rcpt.address,
-                address_lcase: rcpt.address_lcase,
-                status: queue::Status::Scheduled,
-                flags: if rcpt.flags
-                    & (RCPT_NOTIFY_DELAY
-                        | RCPT_NOTIFY_FAILURE
-                        | RCPT_NOTIFY_SUCCESS
-                        | RCPT_NOTIFY_NEVER)
-                    != 0
-                {
-                    rcpt.flags
-                } else {
-                    rcpt.flags | RCPT_NOTIFY_DELAY | RCPT_NOTIFY_FAILURE
-                },
-                orcpt: rcpt.dsn_info,
-                retry: Schedule::now(),
-                notify: Schedule::now(),
-                expires: QueueExpiry::Count(0),
-                queue: QueueName::default(),
-            });
+            message.recipients.push(
+                queue::Recipient::new(rcpt.address)
+                    .with_flags(
+                        if rcpt.flags
+                            & (RCPT_NOTIFY_DELAY
+                                | RCPT_NOTIFY_FAILURE
+                                | RCPT_NOTIFY_SUCCESS
+                                | RCPT_NOTIFY_NEVER)
+                            != 0
+                        {
+                            rcpt.flags
+                        } else {
+                            rcpt.flags | RCPT_NOTIFY_DELAY | RCPT_NOTIFY_FAILURE
+                        },
+                    )
+                    .with_orcpt(rcpt.dsn_info),
+            );
 
-            let envelope = QueueEnvelope::new_rcpt(&message, rcpt_idx);
+            let envelope = QueueEnvelope::new(&message, message.recipients.last().unwrap());
 
             // Set next retry time
             let retry = if self.data.future_release == 0 {
@@ -784,18 +774,18 @@ impl<T: SessionStream> Session<T> {
                 (
                     queue::Schedule::later(future_release + next_notify),
                     match queue.expiry {
-                        QueueExpiry::Duration(time) => QueueExpiry::Duration(future_release + time),
-                        QueueExpiry::Count(count) => QueueExpiry::Count(count),
+                        QueueExpiry::Ttl(time) => QueueExpiry::Ttl(future_release + time),
+                        QueueExpiry::Attempts(count) => QueueExpiry::Attempts(count),
                     },
                 )
             } else if (message.flags & MAIL_BY_RETURN) != 0 {
                 (
                     queue::Schedule::later(future_release + next_notify),
-                    QueueExpiry::Duration(self.data.delivery_by as u64),
+                    QueueExpiry::Ttl(self.data.delivery_by as u64),
                 )
             } else {
                 let (notify, expires) = match queue.expiry {
-                    QueueExpiry::Duration(expire_secs) => (
+                    QueueExpiry::Ttl(expire_secs) => (
                         (if self.data.delivery_by.is_positive() {
                             let notify_at = self.data.delivery_by as u64;
                             if expire_secs > notify_at {
@@ -811,11 +801,11 @@ impl<T: SessionStream> Session<T> {
                                 next_notify
                             }
                         }),
-                        QueueExpiry::Duration(expire_secs),
+                        QueueExpiry::Ttl(expire_secs),
                     ),
-                    QueueExpiry::Count(_) => (
+                    QueueExpiry::Attempts(_) => (
                         next_notify,
-                        QueueExpiry::Duration(self.data.delivery_by.unsigned_abs()),
+                        QueueExpiry::Ttl(self.data.delivery_by.unsigned_abs()),
                     ),
                 };
 
@@ -836,6 +826,7 @@ impl<T: SessionStream> Session<T> {
         MessageWrapper {
             queue_id,
             queue_name: QueueName::default(),
+            is_multi_queue: false,
             span_id,
             message,
         }

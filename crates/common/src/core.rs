@@ -10,13 +10,13 @@ use crate::{
     config::smtp::{
         auth::{ArcSealer, DkimSigner, LazySignature, ResolvedSignature, build_signature},
         queue::{
-            ConnectionStrategy, DEFAULT_QUEUE_NAME, GatewayStrategy, MxConfig, QueueExpiry,
-            QueueName, QueueStrategy, RequireOptional, TlsStrategy, VirtualQueue,
+            ConnectionStrategy, DEFAULT_QUEUE_NAME, MxConfig, QueueExpiry, QueueName,
+            QueueStrategy, RequireOptional, RoutingStrategy, TlsStrategy, VirtualQueue,
         },
     },
     ipc::{BroadcastEvent, StateEvent},
 };
-use directory::{Directory, QueryBy, Type, backend::internal::manage::ManageDirectory};
+use directory::{Directory, QueryParams, Type, backend::internal::manage::ManageDirectory};
 use jmap_proto::types::{
     blob::BlobId,
     collection::{Collection, SyncCollection},
@@ -190,9 +190,9 @@ impl Server {
         })
     }
 
-    pub fn get_gateway_or_default(&self, name: &str, session_id: u64) -> &GatewayStrategy {
-        static LOCAL_GATEWAY: GatewayStrategy = GatewayStrategy::Local;
-        static MX_GATEWAY: GatewayStrategy = GatewayStrategy::Mx(MxConfig {
+    pub fn get_route_or_default(&self, name: &str, session_id: u64) -> &RoutingStrategy {
+        static LOCAL_GATEWAY: RoutingStrategy = RoutingStrategy::Local;
+        static MX_GATEWAY: RoutingStrategy = RoutingStrategy::Mx(MxConfig {
             max_mx: 5,
             max_multi_homed: 2,
             ip_lookup_strategy: IpLookupStrategy::Ipv4thenIpv6,
@@ -200,7 +200,7 @@ impl Server {
         self.core
             .smtp
             .queue
-            .gateway_strategy
+            .routing_strategy
             .get(name)
             .unwrap_or_else(|| match name {
                 "local" => &LOCAL_GATEWAY,
@@ -217,7 +217,7 @@ impl Server {
             })
     }
 
-    pub fn get_virtual_queue_or_default(&self, name: &QueueName, session_id: u64) -> &VirtualQueue {
+    pub fn get_virtual_queue_or_default(&self, name: &QueueName) -> &VirtualQueue {
         static DEFAULT_QUEUE: VirtualQueue = VirtualQueue { threads: 25 };
         self.core
             .smtp
@@ -230,7 +230,6 @@ impl Server {
                         Smtp(trc::SmtpEvent::IdNotFound),
                         Id = name.to_string(),
                         Details = "Virtual queue not found",
-                        SpanId = session_id,
                     );
                 }
 
@@ -253,7 +252,7 @@ impl Server {
                 86400,  // 1 day
                 259200, // 3 days
             ],
-            expiry: QueueExpiry::Duration(432000), // 5 days
+            expiry: QueueExpiry::Ttl(432000), // 5 days
             virtual_queue: QueueName::default(),
         });
         self.core
@@ -452,7 +451,7 @@ impl Server {
                 .core
                 .storage
                 .directory
-                .query(QueryBy::Id(account_id), false)
+                .query(QueryParams::id(account_id).with_return_member_of(false))
                 .await
                 .add_context(|err| err.caused_by(trc::location!()).account_id(account_id))?
             {
@@ -471,7 +470,7 @@ impl Server {
                                 .core
                                 .storage
                                 .directory
-                                .query(QueryBy::Id(tenant_id), false)
+                                .query(QueryParams::id(tenant_id).with_return_member_of(false))
                                 .await
                                 .add_context(|err| {
                                     err.caused_by(trc::location!()).account_id(tenant_id)

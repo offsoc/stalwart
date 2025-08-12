@@ -36,7 +36,7 @@ use std::{
     hash::{BuildHasher, Hash, Hasher},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{Arc, atomic::AtomicBool},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tinyvec::TinyVec;
 use tokio::sync::{Notify, Semaphore, mpsc};
@@ -51,8 +51,6 @@ pub mod auth;
 pub mod config;
 pub mod core;
 pub mod dns;
-#[cfg(feature = "enterprise")]
-pub mod enterprise;
 pub mod expr;
 pub mod i18n;
 pub mod ipc;
@@ -63,6 +61,15 @@ pub mod sharing;
 pub mod storage;
 pub mod telemetry;
 
+// SPDX-SnippetBegin
+// SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+// SPDX-License-Identifier: LicenseRef-SEL
+
+#[cfg(feature = "enterprise")]
+pub mod enterprise;
+
+// SPDX-SnippetEnd
+
 pub use psl;
 
 pub static VERSION_PRIVATE: &str = env!("CARGO_PKG_VERSION");
@@ -72,7 +79,17 @@ pub static USER_AGENT: &str = "Stalwart/1.0.0";
 pub static DAEMON_NAME: &str = concat!("Stalwart v", env!("CARGO_PKG_VERSION"),);
 pub static PROD_ID: &str = "-//Stalwart Labs LLC//Stalwart Server//EN";
 
-pub const DATABASE_SCHEMA_VERSION: u32 = 2;
+/*
+
+Schema history:
+
+1 - v0.12.0
+2 - v0.12.4
+3 - v0.13.0
+
+*/
+
+pub const DATABASE_SCHEMA_VERSION: u32 = 3;
 
 pub const LONG_1D_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 pub const LONG_1Y_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24 * 365);
@@ -90,7 +107,6 @@ pub const KV_RATE_LIMIT_CONTACT: u8 = 7;
 pub const KV_RATE_LIMIT_HTTP_AUTHENTICATED: u8 = 8;
 pub const KV_RATE_LIMIT_HTTP_ANONYMOUS: u8 = 9;
 pub const KV_RATE_LIMIT_IMAP: u8 = 10;
-pub const KV_TOKEN_REVISION: u8 = 11;
 pub const KV_REPUTATION_IP: u8 = 12;
 pub const KV_REPUTATION_FROM: u8 = 13;
 pub const KV_REPUTATION_DOMAIN: u8 = 14;
@@ -223,10 +239,11 @@ pub struct MailboxCache {
     pub acls: TinyVec<[AclGrant; 2]>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct HttpAuthCache {
     pub account_id: u32,
     pub revision: u64,
+    pub expires: Instant,
 }
 
 pub struct Ipc {
@@ -329,8 +346,13 @@ pub struct Core {
     pub spam: SpamFilterConfig,
     pub imap: ImapConfig,
     pub metrics: Metrics,
+
+    // SPDX-SnippetBegin
+    // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+    // SPDX-License-Identifier: LicenseRef-SEL
     #[cfg(feature = "enterprise")]
     pub enterprise: Option<enterprise::Enterprise>,
+    // SPDX-SnippetEnd
 }
 
 impl<T: CacheItemWeight> CacheItemWeight for CacheSwap<T> {
