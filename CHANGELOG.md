@@ -2,6 +2,68 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.13.2] - 2025-07-28
+
+If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- ACME: DeSEC cloud DNS provider support (contributed by @Tyr3al).
+- ACME: OVH cloud DNS provider support (contributed by @srachner).
+- CalDAV Scheduling: Catalan language support (contributed by @jolupa) (#1873).
+- MTA: Allow to send e-mails as group, while member of that group (#485).
+- OIDC: Allow local access tokens to be used with third-party OIDC backends (#1311 stalwartlabs/webadmin#52).
+
+## Changed
+- IMAP: Return `OK` when moving/copying non-existent messages (#670).
+- IMAP: Copy flags when copying/moving messages between accounts.
+
+## Fixed
+- MTA: Do not convert e-mail local parts to lowercase (#1916).
+- Sieve: `fileinto` should override spam filter (#1917).
+- JMAP: Incorrect `accountId` used in email set and import methods (#1777).
+- WebDAV: Always return `MULTISTATUS` when calendar-query yields no results.
+- LDAP: Only set account name if not returned in LDAP query (#1471).
+- Enterprise: Invalidate logo cache when changes are made (#1856).
+- Enterprise: Fix tenant quota update API.
+
+## [0.13.1] - 2025-07-16
+
+If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- ACME: DigitalOcean cloud DNS provider support (#1667).
+
+## Changed
+
+## Fixed
+- Migration: Old queue events not deleted causing high CPU usage in some deployments (#1833).
+- MTA: `mta-sts` setting parsing issue (#1830).
+- JMAP: `sortOrder` should not be null (#1831).
+- Allow invalid TOML when parsing database settings (#1822).
+
+## [0.13.0] - 2025-07-15
+
+If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- MTA queue enhancements (#1246 #1035 #457).
+- Danish locale support (contributed by @Fadil2k) (#1772).
+- DKIM support for `stalwart-cli` (contributed by @rmsc) (#1804).
+
+## Changed
+- Invalidate access token caches in a cluster using pub/sub (#1741).
+- Allow updating secrets for all directory types.
+
+## Fixed
+- WebDAV: Return all shared resources in `calendar-home-set` and `addressbook-home-set` (#1796).
+- WebDAV ACL: Fix write permission and `multiget` reports (#1768).
+- CalDAV Scheduling: Include `DTSTART`/`DTEND` properties in iMIP `CANCEL` messages (#1775).
+- HTTP: Do not include `WWW-Authenticate` headers in API responses (#1795).
+- API: Allow API keys to be used with external directories (#1815).
+- IMAP: Fix issue creating subfolders under INBOX for group shared folder (#1817).
+- IMAP: Custom Name for Shared Folders ignored (#1620).
+- LDAP: `local` placeholder should return username when its not an email address (#1784).
+
 ## [0.12.5] - 2025-06-25
 
 If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.

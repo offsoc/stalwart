@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{Server, auth::AccessToken};
 use directory::{
-    QueryBy, Type,
+    QueryParams, Type,
     backend::internal::{
         PrincipalField,
         manage::{ChangedPrincipals, ManageDirectory},
@@ -20,8 +21,6 @@ use jmap_proto::{
     },
 };
 use utils::map::bitmap::Bitmap;
-
-use crate::{Server, auth::AccessToken};
 
 impl Server {
     pub async fn acl_set(
@@ -161,7 +160,7 @@ impl Server {
             }
         }
 
-        self.increment_token_revision(changed_principals).await;
+        self.invalidate_principal_caches(changed_principals).await;
     }
 
     pub async fn refresh_archived_acls(
@@ -204,7 +203,7 @@ impl Server {
             }
         }
 
-        self.increment_token_revision(changed_principals).await;
+        self.invalidate_principal_caches(changed_principals).await;
     }
 
     pub async fn map_acl_set(&self, acl_set: Vec<Value>) -> Result<Vec<AclGrant>, SetError> {
@@ -215,7 +214,7 @@ impl Server {
                     .core
                     .storage
                     .directory
-                    .query(QueryBy::Name(account_name), false)
+                    .query(QueryParams::name(account_name).with_return_member_of(false))
                     .await
                 {
                     Ok(Some(principal)) => {
@@ -256,7 +255,7 @@ impl Server {
                 .core
                 .storage
                 .directory
-                .query(QueryBy::Name(account_name), false)
+                .query(QueryParams::name(account_name).with_return_member_of(false))
                 .await
             {
                 Ok(Some(principal)) => Ok((

@@ -11,7 +11,7 @@ use ::smtp::outbound::NextHop;
 use common::{
     Core,
     config::smtp::{
-        queue::MxConfig,
+        queue::{MxConfig, QueueExpiry, QueueName},
         report::AggregateFrequency,
         resolver::{Mode, MxPattern, Policy},
     },
@@ -23,48 +23,47 @@ use smtp::{
         lookup::{SourceIp, ToNextHop},
         mta_sts::parse::ParsePolicy,
     },
+    queue::{
+        Error, ErrorDetails, FROM_AUTHENTICATED, Message, QueueEnvelope, Recipient, Schedule,
+        Status,
+    },
     reporting::AggregateTimestamp,
 };
+use store::write::now;
 use utils::config::Config;
 
 const CONFIG: &str = r#"
 [queue.connection.test.timeout]
 connect = "10s"
 
-[[queue.connection.test.source-ip]]
-address = "10.0.0.1"
-ehlo-hostname = "test1.example.com"
-
-[[queue.connection.test.source-ip]]
-address = "10.0.0.2"
-ehlo-hostname = "test2.example.com"
-
-[[queue.connection.test.source-ip]]
-address = "10.0.0.3"
-ehlo-hostname = "test3.example.com"
-
-[[queue.connection.test.source-ip]]
-address = "10.0.0.4"
-ehlo-hostname = "test4.example.com"
-
-[[queue.connection.test.source-ip]]
-address = "a:b::1"
-ehlo-hostname = "test5.example.com"
-
-[[queue.connection.test.source-ip]]
-address = "a:b::2"
-ehlo-hostname = "test6.example.com"
-
-[[queue.connection.test.source-ip]]
-address = "a:b::3"
-ehlo-hostname = "test7.example.com"
-
-[[queue.connection.test.source-ip]]
-address = "a:b::4"
-ehlo-hostname = "test8.example.com"
-
 [queue.connection.test]
 ehlo-hostname = "test.example.com"
+source-ips = ["10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4", 
+              "a:b::1", "a:b::2", "a:b::3", "a:b::4"]
+
+[queue.source-ip."10.0.0.1"]
+ehlo-hostname = "test1.example.com"
+
+[queue.source-ip."10.0.0.2"]
+ehlo-hostname = "test2.example.com"
+
+[queue.source-ip."10.0.0.3"]
+ehlo-hostname = "test3.example.com"
+
+[queue.source-ip."10.0.0.4"]
+ehlo-hostname = "test4.example.com"
+
+[queue.source-ip."a:b::1"]
+ehlo-hostname = "test5.example.com"
+
+[queue.source-ip."a:b::2"]
+ehlo-hostname = "test6.example.com"
+
+[queue.source-ip."a:b::3"]
+ehlo-hostname = "test7.example.com"
+
+[queue.source-ip."a:b::4"]
+ehlo-hostname = "test8.example.com"
 
 [queue.test-v4.type]
 type = "mx"
@@ -74,10 +73,13 @@ ip-lookup-strategy = "ipv4_then_ipv6"
 type = "mx"
 ip-lookup-strategy = "ipv6_then_ipv4"
 
+[queue.strategy]
+schedule = "source + ' ' + received_from_ip + ' ' + received_via_port + ' ' + queue_name + ' ' + last_error + ' ' + rcpt_domain + ' ' + size + ' ' + queue_age"
+
 "#;
 
 #[tokio::test]
-async fn lookup_ip() {
+async fn strategies() {
     // Enable logging
     crate::enable_logging();
 
@@ -137,6 +139,45 @@ async fn lookup_ip() {
             }
         }
     }
+
+    // Test strategy resolution
+    let message = Message {
+        created: now() - 123,
+        blob_hash: Default::default(),
+        received_from_ip: "1.2.3.4".parse().unwrap(),
+        received_via_port: 7911,
+        return_path: "test@example.com".to_string(),
+        recipients: vec![Recipient {
+            address: "recipient@foobar.com".to_string(),
+            retry: Schedule::now(),
+            notify: Schedule::now(),
+            expires: QueueExpiry::Ttl(3600),
+            queue: QueueName::new("test").unwrap(),
+            status: Status::TemporaryFailure(ErrorDetails {
+                entity: "test.example.com".to_string(),
+                details: Error::TlsError("TLS handshake failed".to_string()),
+            }),
+            flags: 0,
+            orcpt: None,
+        }],
+        flags: FROM_AUTHENTICATED,
+        env_id: None,
+        priority: 0,
+        size: 978,
+        quota_keys: vec![],
+    };
+
+    assert_eq!(
+        test.server
+            .eval_if::<String, _>(
+                &test.server.core.smtp.queue.queue,
+                &QueueEnvelope::new(&message, &message.recipients[0]),
+                0,
+            )
+            .await
+            .unwrap_or_else(|| "default".to_string()),
+        "authenticated 1.2.3.4 7911 test tls foobar.com 978 123"
+    );
 }
 
 #[test]

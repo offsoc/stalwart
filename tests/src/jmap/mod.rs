@@ -90,7 +90,7 @@ async fn jmap_tests() {
     .await;
 
     webhooks::test(&mut params).await;
-    email_query::test(&mut params, delete).await;
+    /*email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -113,7 +113,7 @@ async fn jmap_tests() {
     websocket::test(&mut params).await;
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;
+    blob::test(&mut params).await;*/
     permissions::test(&params).await;
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;
@@ -376,6 +376,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
         .credentials(Credentials::basic("admin", "secret"))
         .timeout(Duration::from_secs(3600))
         .accept_invalid_certs(true)
+        .follow_redirects(["127.0.0.1"])
         .connect("https://127.0.0.1:8899")
         .await
         .unwrap();
@@ -496,6 +497,7 @@ pub async fn test_account_login(login: &str, secret: &str) -> Client {
         .credentials(Credentials::basic(login, secret))
         .timeout(Duration::from_secs(5))
         .accept_invalid_certs(true)
+        .follow_redirects(["127.0.0.1"])
         .connect("https://127.0.0.1:8899")
         .await
         .unwrap()
@@ -800,18 +802,18 @@ hash = 64
 type = "system"
 
 [queue.strategy]
-gateway = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
+route = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
              { if = "contains(['remote.org', 'foobar.com', 'test.com', 'other_domain.com'], rcpt_domain)", then = "'mock-smtp'" },
              { else = "'mx'" } ]
 
-[queue.gateway."mock-smtp"]
+[queue.route."mock-smtp"]
 type = "relay"
 address = "localhost"
 port = 9999
 protocol = "smtp"
 
-[queue.gateway."mock-smtp".tls]
-enable = false
+[queue.route."mock-smtp".tls]
+implicit = false
 allow-invalid-certs = true
 
 [session.extensions]

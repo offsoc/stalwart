@@ -9,13 +9,14 @@ use std::time::{Duration, Instant};
 use crate::smtp::{
     DnsCache, TestSMTP,
     inbound::TestMessage,
+    queue::QueuedEvents,
     session::{TestSession, VerifyResponse},
 };
 use common::{
     config::{server::ServerProtocol, smtp::queue::QueueName},
     ipc::QueueEvent,
 };
-use smtp::queue::spool::SmtpSpool;
+use smtp::queue::spool::{QUEUE_REFRESH, SmtpSpool};
 use store::write::now;
 
 const REMOTE: &str = "
@@ -31,7 +32,7 @@ dsn = true
 
 const LOCAL: &str = r#"
 [queue.strategy]
-gateway = [{if = "rcpt_domain = 'foobar.org'", then = "'lmtp'"},
+route = [{if = "rcpt_domain = 'foobar.org'", then = "'lmtp'"},
             {else = "'mx'"}]
 schedule = [{if = "rcpt_domain = 'foobar.org'", then = "'foobar'"},
             {else = "'default'"}]
@@ -59,14 +60,14 @@ queue-name = "default"
 connect = "1s"
 data = "50ms"
 
-[queue.gateway.lmtp]
+[queue.route.lmtp]
 type = "relay"
 address = lmtp.foobar.org
 port = 9924
 protocol = 'lmtp'
 concurrency = 5
 
-[queue.gateway.lmtp.tls]
+[queue.route.lmtp.tls]
 implicit = true
 allow-invalid-certs = true
 "#;
@@ -120,20 +121,21 @@ async fn lmtp_delivery() {
     loop {
         match local.queue_receiver.try_read_event().await {
             Some(QueueEvent::Refresh | QueueEvent::WorkerDone { .. }) => {}
-            Some(QueueEvent::Paused(_)) => unreachable!(),
+            Some(QueueEvent::Paused(_)) | Some(QueueEvent::ReloadSettings) => unreachable!(),
             None | Some(QueueEvent::Stop) => break,
         }
 
-        let events = core.next_event().await;
-        if events.is_empty() {
-            break;
-        }
-        let now = now();
-        for event in events {
-            if event.due > now {
-                tokio::time::sleep(Duration::from_secs(event.due - now)).await;
+        let mut events = core.all_queued_messages().await;
+        if events.messages.is_empty() {
+            let now = now();
+            if events.next_refresh < now + QUEUE_REFRESH {
+                tokio::time::sleep(Duration::from_secs(events.next_refresh - now)).await;
+                events = core.all_queued_messages().await;
+            } else {
+                break;
             }
-
+        }
+        for event in events.messages {
             let message = core
                 .read_message(event.queue_id, QueueName::default())
                 .await
@@ -191,7 +193,7 @@ async fn lmtp_delivery() {
             .message
             .recipients
             .into_iter()
-            .map(|r| r.address)
+            .map(|r| r.address().to_string())
             .collect::<Vec<_>>(),
         vec![
             "bill@foobar.org".to_string(),

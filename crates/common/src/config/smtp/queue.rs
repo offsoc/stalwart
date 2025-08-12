@@ -34,6 +34,7 @@ use utils::config::{Config, utils::ParseValue};
     rkyv::Archive,
     serde::Deserialize,
 )]
+#[rkyv(derive(Debug, Clone, Copy, PartialEq), compare(PartialEq))]
 #[repr(transparent)]
 pub struct QueueName([u8; 8]);
 
@@ -42,7 +43,7 @@ pub const DEFAULT_QUEUE_NAME: QueueName = QueueName([b'd', b'e', b'f', b'a', b'u
 #[derive(Clone)]
 pub struct QueueConfig {
     // Strategy resolver
-    pub gateway: IfBlock,
+    pub route: IfBlock,
     pub queue: IfBlock,
     pub connection: IfBlock,
     pub tls: IfBlock,
@@ -58,13 +59,13 @@ pub struct QueueConfig {
     // Strategies
     pub queue_strategy: AHashMap<String, QueueStrategy>,
     pub connection_strategy: AHashMap<String, ConnectionStrategy>,
-    pub gateway_strategy: AHashMap<String, GatewayStrategy>,
+    pub routing_strategy: AHashMap<String, RoutingStrategy>,
     pub tls_strategy: AHashMap<String, TlsStrategy>,
     pub virtual_queues: AHashMap<QueueName, VirtualQueue>,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum GatewayStrategy {
+pub enum RoutingStrategy {
     Local,
     Mx(MxConfig),
     Relay(RelayConfig),
@@ -86,7 +87,7 @@ pub struct Dsn {
 
 #[derive(Clone, Debug)]
 pub struct VirtualQueue {
-    pub threads: u32,
+    pub threads: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -109,8 +110,8 @@ pub struct QueueStrategy {
     serde::Deserialize,
 )]
 pub enum QueueExpiry {
-    Duration(u64),
-    Count(u32),
+    Ttl(u64),
+    Attempts(u32),
 }
 
 #[derive(Clone, Debug)]
@@ -188,17 +189,38 @@ pub enum RequireOptional {
 impl Default for QueueConfig {
     fn default() -> Self {
         Self {
-            gateway: IfBlock::new::<()>(
-                "queue.strategy.gateway",
+            route: IfBlock::new::<()>(
+                "queue.strategy.route",
                 #[cfg(not(feature = "test_mode"))]
                 [("is_local_domain('*', rcpt_domain)", "'local'")],
                 #[cfg(feature = "test_mode")]
                 [],
                 "'mx'",
             ),
-            queue: IfBlock::new::<()>("queue.strategy.schedule", [], "'default'"),
+            queue: IfBlock::new::<()>(
+                "queue.strategy.schedule",
+                #[cfg(not(feature = "test_mode"))]
+                [
+                    ("is_local_domain('*', rcpt_domain)", "'local'"),
+                    ("source == 'dsn'", "'dsn'"),
+                    ("source == 'report'", "'report'"),
+                ],
+                #[cfg(feature = "test_mode")]
+                [],
+                #[cfg(not(feature = "test_mode"))]
+                "'remote'",
+                #[cfg(feature = "test_mode")]
+                "'default'",
+            ),
             connection: IfBlock::new::<()>("queue.strategy.connection", [], "'default'"),
-            tls: IfBlock::new::<()>("queue.strategy.tls", [], "'default'"),
+            tls: IfBlock::new::<()>(
+                "queue.strategy.tls",
+                #[cfg(not(feature = "test_mode"))]
+                [("retry_num > 0 && last_error == 'tls'", "'invalid-tls'")],
+                #[cfg(feature = "test_mode")]
+                [],
+                "'default'",
+            ),
             dsn: Dsn {
                 name: IfBlock::new::<()>("report.dsn.from-name", [], "'Mail Delivery Subsystem'"),
                 address: IfBlock::new::<()>(
@@ -218,7 +240,7 @@ impl Default for QueueConfig {
             queue_strategy: Default::default(),
             virtual_queues: Default::default(),
             connection_strategy: Default::default(),
-            gateway_strategy: Default::default(),
+            routing_strategy: Default::default(),
             tls_strategy: Default::default(),
         }
     }
@@ -232,7 +254,7 @@ impl QueueConfig {
         let host_vars = TokenMap::default().with_variables(SMTP_QUEUE_HOST_VARS);
 
         for (value, key, token_map) in [
-            (&mut queue.gateway, "queue.strategy.gateway", &rcpt_vars),
+            (&mut queue.route, "queue.strategy.route", &rcpt_vars),
             (&mut queue.queue, "queue.strategy.schedule", &rcpt_vars),
             (
                 &mut queue.connection,
@@ -252,13 +274,12 @@ impl QueueConfig {
                 *value = if_block;
             }
         }
-        let todo = "test parsing";
 
         // Parse strategies
         queue.virtual_queues = parse_virtual_queues(config);
         queue.queue_strategy = parse_queue_strategies(config, &queue.virtual_queues);
         queue.connection_strategy = parse_connection_strategies(config);
-        queue.gateway_strategy = parse_gateway_strategies(config);
+        queue.routing_strategy = parse_routing_strategies(config);
         queue.tls_strategy = parse_tls_strategies(config);
 
         // Parse rate limiters
@@ -334,8 +355,8 @@ fn parse_queue_strategy(
             config.property::<Duration>(("queue.schedule", id, "expire")),
             config.property::<u32>(("queue.schedule", id, "max-attempts")),
         ) {
-            (Some(duration), None) => QueueExpiry::Duration(duration.as_secs()),
-            (None, Some(count)) => QueueExpiry::Count(count),
+            (Some(duration), None) => QueueExpiry::Ttl(duration.as_secs()),
+            (None, Some(count)) => QueueExpiry::Attempts(count),
             (Some(_), Some(_)) => {
                 config.new_parse_error(
                     ("queue.schedule", id, "expire"),
@@ -343,7 +364,7 @@ fn parse_queue_strategy(
                 );
                 return None;
             }
-            (None, None) => QueueExpiry::Duration(60 * 60 * 24 * 3), // Default to 3 days
+            (None, None) => QueueExpiry::Ttl(60 * 60 * 24 * 3), // Default to 3 days
         },
         virtual_queue,
     })
@@ -369,64 +390,64 @@ fn parse_virtual_queues(config: &mut Config) -> AHashMap<QueueName, VirtualQueue
 fn parse_virtual_queue(config: &mut Config, id: &str) -> Option<VirtualQueue> {
     Some(VirtualQueue {
         threads: config
-            .property_require::<u32>(("queue.virtual", id, "threads-per-node"))
+            .property_require::<usize>(("queue.virtual", id, "threads-per-node"))
             .unwrap_or(1),
     })
 }
 
-fn parse_gateway_strategies(config: &mut Config) -> AHashMap<String, GatewayStrategy> {
+fn parse_routing_strategies(config: &mut Config) -> AHashMap<String, RoutingStrategy> {
     let mut entries = AHashMap::new();
-    for key in config.sub_keys("queue.gateway", ".type") {
-        if let Some(strategy) = parse_gateway(config, &key) {
+    for key in config.sub_keys("queue.route", ".type") {
+        if let Some(strategy) = parse_route(config, &key) {
             entries.insert(key, strategy);
         }
     }
     entries
 }
 
-fn parse_gateway(config: &mut Config, id: &str) -> Option<GatewayStrategy> {
-    match config.value_require_non_empty(("queue.gateway", id, "type"))? {
-        "relay" => GatewayStrategy::Relay(RelayConfig {
-            address: config.property_require(("queue.gateway", id, "address"))?,
+fn parse_route(config: &mut Config, id: &str) -> Option<RoutingStrategy> {
+    match config.value_require_non_empty(("queue.route", id, "type"))? {
+        "relay" => RoutingStrategy::Relay(RelayConfig {
+            address: config.property_require(("queue.route", id, "address"))?,
             port: config
-                .property_require(("queue.gateway", id, "port"))
+                .property_require(("queue.route", id, "port"))
                 .unwrap_or(25),
             protocol: config
-                .property_require(("queue.gateway", id, "protocol"))
+                .property_require(("queue.route", id, "protocol"))
                 .unwrap_or(ServerProtocol::Smtp),
             auth: if let (Some(username), Some(secret)) = (
-                config.value(("queue.gateway", id, "auth.username")),
-                config.value(("queue.gateway", id, "auth.secret")),
+                config.value(("queue.route", id, "auth.username")),
+                config.value(("queue.route", id, "auth.secret")),
             ) {
                 Credentials::new(username.to_string(), secret.to_string()).into()
             } else {
                 None
             },
             tls_implicit: config
-                .property(("queue.gateway", id, "tls.implicit"))
+                .property(("queue.route", id, "tls.implicit"))
                 .unwrap_or(true),
             tls_allow_invalid_certs: config
-                .property(("queue.gateway", id, "tls.allow-invalid-certs"))
+                .property(("queue.route", id, "tls.allow-invalid-certs"))
                 .unwrap_or(false),
         })
         .into(),
-        "local" => GatewayStrategy::Local.into(),
-        "mx" => GatewayStrategy::Mx(MxConfig {
+        "local" => RoutingStrategy::Local.into(),
+        "mx" => RoutingStrategy::Mx(MxConfig {
             max_mx: config
-                .property_require(("queue.gateway", id, "limits.mx"))
+                .property(("queue.route", id, "limits.mx"))
                 .unwrap_or(5),
             max_multi_homed: config
-                .property_require(("queue.gateway", id, "limits.multihomed"))
+                .property(("queue.route", id, "limits.multihomed"))
                 .unwrap_or(2),
             ip_lookup_strategy: config
-                .property_require(("queue.gateway", id, "ip-lookup"))
+                .property(("queue.route", id, "ip-lookup"))
                 .unwrap_or(IpLookupStrategy::Ipv4thenIpv6),
         })
         .into(),
         invalid => {
             let details =
-                format!("Invalid gateway type: {invalid:?}. Expected 'relay', 'local', or 'mx'.");
-            config.new_parse_error(("queue.gateway", id, "type"), details);
+                format!("Invalid route type: {invalid:?}. Expected 'relay', 'local', or 'mx'.");
+            config.new_parse_error(("queue.route", id, "type"), details);
             None
         }
     }
@@ -439,7 +460,6 @@ fn parse_tls_strategies(config: &mut Config) -> AHashMap<String, TlsStrategy> {
         &[
             ".allow-invalid-certs",
             ".dane",
-            ".mta-sts",
             ".starttls",
             ".timeout.tls",
             ".timeout.mta-sts",
@@ -455,22 +475,22 @@ fn parse_tls_strategies(config: &mut Config) -> AHashMap<String, TlsStrategy> {
 fn parse_tls(config: &mut Config, id: &str) -> Option<TlsStrategy> {
     Some(TlsStrategy {
         dane: config
-            .property_require::<RequireOptional>(("queue.tls", id, "dane"))
+            .property::<RequireOptional>(("queue.tls", id, "dane"))
             .unwrap_or(RequireOptional::Optional),
         mta_sts: config
-            .property_require::<RequireOptional>(("queue.tls", id, "mta-sts"))
+            .property::<RequireOptional>(("queue.tls", id, "mta-sts"))
             .unwrap_or(RequireOptional::Optional),
         tls: config
-            .property_require::<RequireOptional>(("queue.tls", id, "starttls"))
+            .property::<RequireOptional>(("queue.tls", id, "starttls"))
             .unwrap_or(RequireOptional::Optional),
         allow_invalid_certs: config
-            .property_require::<bool>(("queue.tls", id, "allow-invalid-certs"))
+            .property::<bool>(("queue.tls", id, "allow-invalid-certs"))
             .unwrap_or(false),
         timeout_tls: config
-            .property_require::<Duration>(("queue.tls", id, "timeout.tls"))
+            .property::<Duration>(("queue.tls", id, "timeout.tls"))
             .unwrap_or(Duration::from_secs(3 * 60)),
         timeout_mta_sts: config
-            .property_require::<Duration>(("queue.tls", id, "timeout.mta-sts"))
+            .property::<Duration>(("queue.tls", id, "timeout.mta-sts"))
             .unwrap_or(Duration::from_secs(5 * 60)),
     })
 }
@@ -500,30 +520,16 @@ fn parse_connection(config: &mut Config, id: &str) -> Option<ConnectionStrategy>
     let mut source_ipv4 = Vec::new();
     let mut source_ipv6 = Vec::new();
 
-    for ip_num in config.sub_keys(("queue.connection", id, "source-ip"), ".address") {
-        if let Some(ip) = config.property_require::<IpAddr>((
-            "queue.connection",
-            id,
-            "source-ip",
-            ip_num.as_str(),
-            "address",
-        )) {
-            let ip_and_host = IpAndHost {
-                ip,
-                host: config.property::<String>((
-                    "queue.connection",
-                    id,
-                    "source-ip",
-                    ip_num.as_str(),
-                    "ehlo-hostname",
-                )),
-            };
+    for (_, ip) in config.properties::<IpAddr>(("queue.connection", id, "source-ips")) {
+        let ip_and_host = IpAndHost {
+            ip,
+            host: config.property::<String>(("queue.source-ip", ip.to_string(), "ehlo-hostname")),
+        };
 
-            if ip.is_ipv4() {
-                source_ipv4.push(ip_and_host);
-            } else {
-                source_ipv6.push(ip_and_host);
-            }
+        if ip.is_ipv4() {
+            source_ipv4.push(ip_and_host);
+        } else {
+            source_ipv6.push(ip_and_host);
         }
     }
 
@@ -532,22 +538,22 @@ fn parse_connection(config: &mut Config, id: &str) -> Option<ConnectionStrategy>
         source_ipv6,
         ehlo_hostname: config.property::<String>(("queue.connection", id, "ehlo-hostname")),
         timeout_connect: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.connect"))
+            .property::<Duration>(("queue.connection", id, "timeout.connect"))
             .unwrap_or(Duration::from_secs(5 * 60)),
         timeout_greeting: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.greeting"))
+            .property::<Duration>(("queue.connection", id, "timeout.greeting"))
             .unwrap_or(Duration::from_secs(5 * 60)),
         timeout_ehlo: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.ehlo"))
+            .property::<Duration>(("queue.connection", id, "timeout.ehlo"))
             .unwrap_or(Duration::from_secs(5 * 60)),
         timeout_mail: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.mail-from"))
+            .property::<Duration>(("queue.connection", id, "timeout.mail-from"))
             .unwrap_or(Duration::from_secs(5 * 60)),
         timeout_rcpt: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.rcpt-to"))
+            .property::<Duration>(("queue.connection", id, "timeout.rcpt-to"))
             .unwrap_or(Duration::from_secs(5 * 60)),
         timeout_data: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.data"))
+            .property::<Duration>(("queue.connection", id, "timeout.data"))
             .unwrap_or(Duration::from_secs(10 * 60)),
     })
 }
@@ -919,11 +925,21 @@ impl QueueName {
     }
 
     pub fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.0).unwrap_or_default()
+        std::str::from_utf8(&self.0)
+            .unwrap_or_default()
+            .trim_end_matches('\0')
     }
 
     pub fn into_inner(self) -> [u8; 8] {
         self.0
+    }
+}
+
+impl ArchivedQueueName {
+    pub fn as_str(&self) -> &str {
+        std::str::from_utf8(self.0.as_ref())
+            .unwrap_or_default()
+            .trim_end_matches('\0')
     }
 }
 
@@ -947,7 +963,13 @@ impl ParseValue for QueueName {
 
 impl Display for QueueName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+        self.as_str().fmt(f)
+    }
+}
+
+impl Display for ArchivedQueueName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_str().fmt(f)
     }
 }
 
