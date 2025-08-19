@@ -2,6 +2,7 @@ import requests
 import random
 import string
 import urllib3
+import hashlib
 
 # Configuration Variables
 HOSTNAME = '127.0.0.1'  # Replace with the actual hostname
@@ -43,7 +44,8 @@ def create_user_accounts():
             url = f"https://{HOSTNAME}/api/principal"
             response = requests.post(url, json=data, auth=(USERNAME, PASSWORD), verify=False)
             if response.status_code == 200:
-                file.write(f"{username}:{password}\n")
+                hashed_password = hashlib.sha512(password.encode('utf-8')).hexdigest()
+                file.write(f"{username}:{hashed_password}\n")
                 print(f"User account '{username}' created successfully.")
             else:
                 print(f"Failed to create user account '{username}'. Status Code: {response.status_code}")
