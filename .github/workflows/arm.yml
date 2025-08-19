@@ -1,0 +1,175 @@
+name: Build & Push Arch Docker Images
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  # Job to build and push AMD64 images
+  build-and-push-amd64:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile:
+          - Dockerfile
+          - resources/Dockerfile.RHEL9.6
+          - resources/Dockerfile.RKEL9.6
+          - resources/Dockerfile.RKEL10.0
+          - resources/Dockerfile.RHEL10.0
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Dockerfile tag and platform
+        id: tag
+        run: |
+          file=${{ matrix.dockerfile }}
+          # Map Dockerfile paths to a human-readable tag
+          case "$file" in
+            Dockerfile) echo "tag=bookworm" >> $GITHUB_OUTPUT ;;
+            resources/Dockerfile.RHEL9.6) echo "tag=rhel9.6" >> $GITHUB_OUTPUT ;;
+            resources/Dockerfile.RKEL9.6) echo "tag=rkel9.6" >> $GITHUB_OUTPUT ;;
+            resources/Dockerfile.RKEL10.0) echo "tag=rkel10.0" >> $GITHUB_OUTPUT ;;
+            resources/Dockerfile.RHEL10.0) echo "tag=rhel10.0" >> $GITHUB_OUTPUT ;;
+            *) echo "tag=custom" >> $GITHUB_OUTPUT ;;
+          esac
+          echo "safe_platform=linux-amd64" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image with artifacts
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-linux-amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true # Load the image into the local Docker daemon
+      
+      # The previous "Get image digest" step has been removed as it is no longer needed.
+      
+      - name: Save Docker image as tar
+        run: |
+          # Use the image tag directly since a digest is not available
+          docker save -o stalwart-image-${{ steps.tag.outputs.tag }}.tar ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-linux-amd64
+          
+      - name: Upload Docker image tar as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stalwart-image-${{ steps.tag.outputs.tag }}-linux-amd64
+          path: stalwart-image-${{ steps.tag.outputs.tag }}.tar
+
+      - name: Extract binaries from image
+        run: |
+          # Use the image tag directly to create the container
+          id=$(docker create ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-linux-amd64)
+          docker cp $id:/usr/local/bin/stalwart ./stalwart-${{ steps.tag.outputs.tag }} || true
+          docker cp $id:/usr/local/bin/stalwart-cli ./stalwart-cli-${{ steps.tag.outputs.tag }} || true
+          docker rm $id
+          
+      - name: Upload binaries as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stalwart-binaries-${{ steps.tag.outputs.tag }}-linux-amd64
+          path: |
+            stalwart-${{ steps.tag.outputs.tag }}
+            stalwart-cli-${{ steps.tag.outputs.tag }}
+  
+  # Job to build and push ARM64 images
+  build-and-push-arm64:
+    runs-on: ubuntu-24.04-arm64
+    strategy:
+      matrix:
+        dockerfile:
+          - Dockerfile
+          - resources/Dockerfile.RHEL9.6
+          - resources/Dockerfile.RKEL9.6
+          - resources/Dockerfile.RKEL10.0
+          - resources/Dockerfile.RHEL10.0
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Dockerfile tag and platform
+        id: tag
+        run: |
+          file=${{ matrix.dockerfile }}
+          # Map Dockerfile paths to a human-readable tag
+          case "$file" in
+            Dockerfile) echo "tag=bookworm" >> $GITHUB_OUTPUT ;;
+            resources/Dockerfile.RHEL9.6) echo "tag=rhel9.6" >> $GITHUB_OUTPUT ;;
+            resources/Dockerfile.RKEL9.6) echo "tag=rkel9.6" >> $GITHUB_OUTPUT ;;
+            resources/Dockerfile.RKEL10.0) echo "tag=rkel10.0" >> $GITHUB_OUTPUT ;;
+            resources/Dockerfile.RHEL10.0) echo "tag=rhel10.0" >> $GITHUB_OUTPUT ;;
+            *) echo "tag=custom" >> $GITHUB_OUTPUT ;;
+          esac
+          echo "safe_platform=linux-arm64" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image with artifacts
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-linux-arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      # The previous "Get image digest" step has been removed as it is no longer needed.
+          
+      - name: Save Docker image as tar
+        run: |
+          # Use the image tag directly since a digest is not available
+          docker save -o stalwart-image-${{ steps.tag.outputs.tag }}.tar ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-linux-arm64
+          
+      - name: Upload Docker image tar as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stalwart-image-${{ steps.tag.outputs.tag }}-linux-arm64
+          path: stalwart-image-${{ steps.tag.outputs.tag }}.tar
+
+      - name: Extract binaries from image
+        run: |
+          # Use the image tag directly to create the container
+          id=$(docker create ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-linux-arm64)
+          docker cp $id:/usr/local/bin/stalwart ./stalwart-${{ steps.tag.outputs.tag }} || true
+          docker cp $id:/usr/local/bin/stalwart-cli ./stalwart-cli-${{ steps.tag.outputs.tag }} || true
+          docker rm $id
+          
+      - name: Upload binaries as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stalwart-binaries-${{ steps.tag.outputs.tag }}-linux-arm64
+          path: |
+            stalwart-${{ steps.tag.outputs.tag }}
+            stalwart-cli-${{ steps.tag.outputs.tag }}
