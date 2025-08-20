@@ -1,5 +1,10 @@
 name: Build & Push Arch Docker Images
 
+permissions:
+  contents: read
+  packages: write
+  actions: write
+
 on:
   push:
     branches: [ main ]
