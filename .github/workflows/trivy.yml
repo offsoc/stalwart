@@ -1,41 +1,56 @@
-# trivy ci workflow
-name: trivy
+name: Rust Security CI
 
 on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
   pull_request:
-    # The branches below must be a subset of the branches above
     branches: [ "main" ]
   schedule:
     - cron: '00 12 * * *'
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   build:
-    permissions:
-      contents: read # for actions/checkout to fetch code
-      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
-      actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
-    name: Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-        
-      - name: Run Trivy vulnerability scanner
+
+      # Run cargo audit
+      - name: Run cargo audit
+        run: |
+          cargo install cargo-audit
+          cargo audit --deny=warnings
+
+      # Run Clippy for static analysis
+      - name: Run Clippy
+        run: cargo clippy -- -D warnings
+
+      # Run rustsec to check vulnerabilities in dependencies
+      - name: Run rustsec check
+        run: cargo install rustsec && rustsec advisory --workspace
+
+      # Build Docker image and scan it with Trivy
+      - name: Set up Trivy
         uses: aquasecurity/trivy-action@master
+      
         with:
-          scan-type: 'fs'
+          scan-type: 'image'
           ignore-unfixed: true
           format: 'sarif'
-          output: 'trivy-results.sarif'
+          output: 'trivy-image-results.sarif'
           severity: 'CRITICAL,HIGH'
 
-      - name: Upload Trivy scan results to GitHub Security tab
+      - name: Upload Trivy image scan results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: 'trivy-image-results.sarif'
