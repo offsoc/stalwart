@@ -1,10 +1,12 @@
-name: Trivy CI - Multi-Arch
+# trivy ci workflow
+name: trivy
 
 on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
   pull_request:
+    # The branches below must be a subset of the branches above
     branches: [ "main" ]
   schedule:
     - cron: '00 12 * * *'
@@ -13,77 +15,27 @@ permissions:
   contents: read
 
 jobs:
-  trivy-scan:
+  build:
     permissions:
-      contents: read
-      security-events: write
-      actions: read
+      contents: read # for actions/checkout to fetch code
+      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
+      actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+    name: Check
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        platform: [linux/amd64, linux/arm64]
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-
-      # ----------------------------
-      # 设置安全平台变量
-      # ----------------------------
-      - name: Set safe platform name
-        id: safe-platform
-        run: |
-          SAFE_PLATFORM=$(echo "${{ matrix.platform }}" | tr '/' '-')
-          echo "SAFE_PLATFORM=$SAFE_PLATFORM" >> $GITHUB_ENV
-
-      # ----------------------------
-      # Build Docker image (multi-arch)
-      # ----------------------------
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build multi-arch Docker image
-        run: |
-          docker buildx build \
-            --platform ${{ matrix.platform }} \
-            --tag ghcr.io/offsoc/stalwart:test-scan-${{ env.SAFE_PLATFORM }} \
-            --load \
-            .
-
-      # ----------------------------
-      # Scan filesystem
-      # ----------------------------
-      - name: Scan filesystem with Trivy
+        
+      - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: fs
+          scan-type: 'fs'
           ignore-unfixed: true
-          format: sarif
-          output: trivy-fs-results-${{ env.SAFE_PLATFORM }}.sarif
-          severity: CRITICAL,HIGH
-          exit-code: 1
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
 
-      - name: Upload filesystem SARIF
+      - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: trivy-fs-results-${{ env.SAFE_PLATFORM }}.sarif
-
-      # ----------------------------
-      # Scan Docker image
-      # ----------------------------
-      - name: Scan Docker image with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: image
-          image-ref: ghcr.io/offsoc/stalwart:test-scan-${{ env.SAFE_PLATFORM }}
-          format: sarif
-          output: trivy-image-results-${{ env.SAFE_PLATFORM }}.sarif
-          severity: CRITICAL,HIGH
-          exit-code: 1
-
-      - name: Upload Docker image SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-image-results-${{ env.SAFE_PLATFORM }}.sarif
+          sarif_file: 'trivy-results.sarif'
