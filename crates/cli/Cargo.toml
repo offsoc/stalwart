@@ -24,7 +24,7 @@ console = { version = "0.16", default-features = false, features = ["ansi-parsin
 serde = { version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 csv = "1.1"
-form_urlencoded = "1.1.0"
+form_urlencoded = "1.2.2"
 human-size = "0.4.2"
 futures = "0.3.28"
 pwhash = "1.0.0"

@@ -36,7 +36,7 @@ webpki-roots = { version = "1.0"}
 hyper = { version = "1.7.0", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1.1", features = ["tokio"] }
 http-body-util = "0.1.0"
-form_urlencoded = "1.1.0"
+form_urlencoded = "1.2.2"
 sha1 = "0.10"
 sha2 = "0.10.6"
 md5 = "0.8.0"
