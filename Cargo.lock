@@ -963,18 +963,21 @@ dependencies = [
 
 [[package]]
 name = "calcard"
-version = "0.1.3"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "720e412adf25f179f643b0753108cb308b812f82e1d34131c06b015c806e3f3c"
+checksum = "bc0733399f804cfaecb4e24c56594f993df399d4ad301c028ff03993227bb455"
 dependencies = [
  "ahash",
  "chrono",
  "chrono-tz",
  "hashify",
+ "jmap-tools 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "mail-builder",
  "mail-parser",
  "rkyv",
  "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -3906,6 +3909,18 @@ dependencies = [
 [[package]]
 name = "jmap-tools"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0da21c2b6812cafde8677416c90b03e29c613da58fca4cc3aaa0f62bbe37f752"
+dependencies = [
+ "hashify",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "jmap-tools"
+version = "0.1.1"
+source = "git+https://github.com/stalwartlabs/jmap-tools.git#30404d8979d8d64bf72a68e7750acb22b233784f"
 dependencies = [
  "hashify",
  "serde",
@@ -3919,7 +3934,7 @@ dependencies = [
  "ahash",
  "compact_str",
  "hashify",
- "jmap-tools",
+ "jmap-tools 0.1.1 (git+https://github.com/stalwartlabs/jmap-tools.git)",
  "mail-parser",
  "rkyv",
  "serde",
@@ -8930,6 +8945,7 @@ dependencies = [
  "getrandom 0.3.3",
  "js-sys",
  "serde",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 
