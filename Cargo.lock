@@ -2171,7 +2171,7 @@ dependencies = [
  "mail-parser",
  "nlp",
  "rand 0.8.5",
- "rasn 0.10.6",
+ "rasn 0.28.0",
  "rasn-cms",
  "rasn-pkix 0.28.0",
  "rkyv",
