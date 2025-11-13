@@ -2218,7 +2218,7 @@ dependencies = [
  "rand 0.8.5",
  "rasn 0.10.6",
  "rasn-cms",
- "rasn-pkix 0.10.6",
+ "rasn-pkix",
  "rkyv",
  "rsa",
  "sequoia-openpgp",
@@ -6148,7 +6148,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f9f8dec5fe7b353f2e736edf3ac9bffed9bd0f7a264da6f14eb542a55c9e474"
 dependencies = [
  "rasn 0.28.0",
- "rasn-pkix 0.28.0",
+ "rasn-pkix",
 ]
 
 [[package]]
@@ -6189,15 +6189,6 @@ dependencies = [
  "quote",
  "syn 2.0.107",
  "uuid",
-]
-
-[[package]]
-name = "rasn-pkix"
-version = "0.10.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c825c4183e8f4db9bd772206d7d0fa10f3df35b6ed5bcb8f6cb50fd1166f8e9"
-dependencies = [
- "rasn 0.10.6",
 ]
 
 [[package]]
