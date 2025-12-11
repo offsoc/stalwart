@@ -53,8 +53,8 @@ impl Namespace {
             "DAV:" => Namespace::Dav,
             "urn:ietf:params:xml:ns:caldav" => Namespace::CalDav,
             "urn:ietf:params:xml:ns:carddav" => Namespace::CardDav,
-            "http://calendarserver.org/ns/" => Namespace::CalendarServer,
-            "http://calendarserver.org/ns" => Namespace::CalendarServer
+            "https://calendarserver.org/ns/" => Namespace::CalendarServer,
+            "https://calendarserver.org/ns" => Namespace::CalendarServer
         )
     }
 
@@ -72,7 +72,7 @@ impl Namespace {
             Namespace::Dav => "DAV:",
             Namespace::CalDav => "urn:ietf:params:xml:ns:caldav",
             Namespace::CardDav => "urn:ietf:params:xml:ns:carddav",
-            Namespace::CalendarServer => "http://calendarserver.org/ns/",
+            Namespace::CalendarServer => "https://calendarserver.org/ns/",
         }
     }
 }
