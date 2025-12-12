@@ -318,6 +318,11 @@ async fn https(
     body: Option<String>,
 ) -> trc::Result<Response> {
     let url = url.as_ref();
+    if !url.to_ascii_lowercase().starts_with("https://") {
+        return Err(trc::EventType::Acme(trc::AcmeEvent::Error)
+            .caused_by(trc::location!())
+            .details(format!("Refusing to transmit sensitive info over non-HTTPS URL: {}", url)));
+    }
     let mut builder = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .http1_only();

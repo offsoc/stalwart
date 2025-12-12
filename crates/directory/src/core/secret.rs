@@ -230,12 +230,10 @@ pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> trc::Resul
                     Ok(&hasher.finalize()[..] == hash)
                 }
                 "MD5" => {
-                    // MD5
-                    let digest = md5::compute(secret.as_bytes());
-                    Ok(
-                        String::from_utf8(base64_encode(&digest[..]).unwrap_or_default()).unwrap()
-                            == hashed_secret,
-                    )
+                    // MD5 is insecure and deprecated for password hashing.
+                    return Err(trc::AuthEvent::Error
+                        .ctx(trc::Key::Reason, "MD5 is insecure and not supported for secret verification")
+                        .details(hashed_secret.to_string()));
                 }
                 "CRYPT" | "crypt" => {
                     if hashed_secret.starts_with('$') {
