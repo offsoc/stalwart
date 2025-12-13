@@ -42,12 +42,12 @@ RUN cargo build --release \
     -p stalwart \
     --manifest-path crates/main/Cargo.toml \
     --no-default-features \
-    --features "sqlite foundationdb kafka enterprise"
+    --features " sqlite foundationdb postgres mysql rocks s3 redis azure nats zenoh  kafka enterprise " 
 
 RUN cargo build --release \
     -p stalwart-cli \
     --no-default-features \
-    --features "sqlite foundationdb kafka enterprise"
+    --features " sqlite foundationdb postgres mysql rocks s3 redis azure nats zenoh  kafka enterprise " 
 
 RUN mkdir -p /output && \
     cp target/release/stalwart /output/ && \
