@@ -18,6 +18,9 @@ RUN case "${TARGETPLATFORM}" in \
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -yq --no-install-recommends build-essential libclang-dev \
+    cmake \
+    pkg-config \
+    zlib1g-dev \
     g++-aarch64-linux-gnu binutils-aarch64-linux-gnu \
     g++-x86-64-linux-gnu binutils-x86-64-linux-gnu
 RUN rustup target add "$(cat /target.txt)"
