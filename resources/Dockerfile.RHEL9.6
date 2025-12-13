@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 ############################
-# Builder
+# Builder（不强制 9.6）
 ############################
 FROM rockylinux:9 AS builder
 WORKDIR /build
@@ -42,12 +42,12 @@ RUN cargo build --release \
     -p stalwart \
     --manifest-path crates/main/Cargo.toml \
     --no-default-features \
-    --features " sqlite foundationdb postgres mysql rocks s3 redis azure nats zenoh  kafka enterprise " 
+    --features "sqlite foundationdb postgres mysql rocks s3 redis azure nats zenoh kafka enterprise"
 
 RUN cargo build --release \
     -p stalwart-cli \
     --no-default-features \
-    --features " sqlite foundationdb postgres mysql rocks s3 redis azure nats zenoh  kafka enterprise " 
+    --features "sqlite foundationdb postgres mysql rocks s3 redis azure nats zenoh kafka enterprise"
 
 RUN mkdir -p /output && \
     cp target/release/stalwart /output/ && \
@@ -55,9 +55,9 @@ RUN mkdir -p /output && \
 
 
 ############################
-# Runtime
+# Runtime（严格 RHEL 9.6）
 ############################
-FROM rockylinux:9
+FROM registry.access.redhat.com/ubi9/ubi:9.6
 WORKDIR /opt/stalwart
 
 # ---- 运行时依赖 ----
