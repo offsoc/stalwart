@@ -1,0 +1,48 @@
+permissions:
+  contents: read
+name: CI Build Stalwart Mail
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout current repo
+      uses: actions/checkout@v5.0.1
+
+    - name: Clone stalwart project
+      run: |
+        git clone https://github.com/offsoc/stalwart.git
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler libsqlite3-dev
+
+    - name: Install FoundationDB client (optional)
+      run: |
+        wget https://github.com/apple/foundationdb/releases/download/7.3.71/foundationdb-clients_7.3.71-1_amd64.deb
+        sudo dpkg -i foundationdb-clients_7.3.71-1_amd64.deb
+    - name: Install Rust manually via rustup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Build stalwart (SQLite backend)
+      run: |
+        cd stalwart
+        ~/.cargo/bin/cargo build --manifest-path=crates/main/Cargo.toml --release
+
+    - name: Upload stalwart binary
+      uses: actions/upload-artifact@v5
+      with:
+        name: stalwart-mail
+        path: stalwart/target/release/stalwart*
