@@ -1,48 +1,124 @@
+name: CI / CD - Stalwart Mail
+
 permissions:
   contents: read
-name: CI Build Stalwart Mail
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  FDB_VERSION: 7.3.71
 
 jobs:
   build:
+    name: Build (Linux x86_64, OSS + Enterprise-ready)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
 
     steps:
-    - name: Checkout current repo
-      uses: actions/checkout@v6
+      # ------------------------------------------------------------
+      # Checkout
+      # ------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
-    - name: Clone stalwart project
-      run: |
-        git clone https://github.com/offsoc/stalwart.git
+      # ------------------------------------------------------------
+      # System dependencies
+      # ------------------------------------------------------------
+      - name: Install system dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            protobuf-compiler \
+            libsqlite3-dev \
+            ca-certificates \
+            wget
 
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler libsqlite3-dev
+      # ------------------------------------------------------------
+      # FoundationDB client (REQUIRED)
+      # ------------------------------------------------------------
+      - name: Install FoundationDB client (required)
+        run: |
+          set -euxo pipefail
 
-    - name: Install FoundationDB client (optional)
-      run: |
-        wget https://github.com/apple/foundationdb/releases/download/7.3.71/foundationdb-clients_7.3.71-1_amd64.deb
-        sudo dpkg -i foundationdb-clients_7.3.71-1_amd64.deb
-    - name: Install Rust manually via rustup
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          FDB_DEB="foundationdb-clients_${FDB_VERSION}-1_amd64.deb"
 
-    - name: Build stalwart (SQLite backend)
-      run: |
-        cd stalwart
-        ~/.cargo/bin/cargo build --manifest-path=crates/main/Cargo.toml --release
+          wget -q \
+            https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/${FDB_DEB}
 
-    - name: Upload stalwart binary
-      uses: actions/upload-artifact@v5
-      with:
-        name: stalwart-mail
-        path: stalwart/target/release/stalwart*
+          sudo dpkg -i ${FDB_DEB}
+
+          # Hard verification (fail build if missing)
+          ldconfig -p | grep libfdb_c
+
+      # ------------------------------------------------------------
+      # Rust toolchain (pinned)
+      # ------------------------------------------------------------
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.76.0
+          components: rustfmt, clippy
+
+      # ------------------------------------------------------------
+      # Cargo cache
+      # ------------------------------------------------------------
+      - name: Cache cargo registry & target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: stalwart-linux
+          workspaces: |
+            . -> target
+
+      # ------------------------------------------------------------
+      # Build (OSS profile, sqlite)
+      # ------------------------------------------------------------
+      - name: Build stalwart (release, sqlite)
+        run: |
+          set -euxo pipefail
+
+          cargo build \
+            --manifest-path crates/main/Cargo.toml \
+            --release \
+            --no-default-features \
+            --features "sqlite"
+
+          cargo build \
+            --manifest-path crates/cli/Cargo.toml \
+            --release
+
+      # ------------------------------------------------------------
+      # Strip binaries (prod-ready)
+      # ------------------------------------------------------------
+      - name: Strip binaries
+        run: |
+          strip target/release/stalwart || true
+          strip target/release/stalwart-cli || true
+
+      # ------------------------------------------------------------
+      # Smoke test (basic)
+      # ------------------------------------------------------------
+      - name: Smoke test
+        run: |
+          ./target/release/stalwart --version
+          ./target/release/stalwart-cli --help
+
+      # ------------------------------------------------------------
+      # Upload artifacts
+      # ------------------------------------------------------------
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: stalwart-linux-x86_64
+          path: |
+            target/release/stalwart
+            target/release/stalwart-cli

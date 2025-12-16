@@ -80,7 +80,7 @@ jobs:
           docker save -o stalwart-image-${{ steps.tag.outputs.tag }}.tar stalwart-local:${{ steps.tag.outputs.tag }}
 
       - name: Upload Docker image tar as artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: stalwart-image-${{ steps.tag.outputs.tag }}-${{ steps.tag.outputs.safe_platform }}
           path: stalwart-image-${{ steps.tag.outputs.tag }}.tar
@@ -93,7 +93,7 @@ jobs:
           docker rm $id
 
       - name: Upload binaries as artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: stalwart-binaries-${{ steps.tag.outputs.tag }}-${{ steps.tag.outputs.safe_platform }}
           path: |
