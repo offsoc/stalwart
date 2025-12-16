@@ -86,15 +86,10 @@ jobs:
         run: |
           set -euxo pipefail
 
-          cargo build \
-            --manifest-path crates/main/Cargo.toml \
-            --release \
-            --no-default-features \
-            --features "sqlite"
+          cargo build --manifest-path crates/main/Cargo.toml --release 
 
-          cargo build \
-            --manifest-path crates/cli/Cargo.toml \
-            --release
+          cargo build  --manifest-path crates/cli/Cargo.toml --release
+           
 
       # ------------------------------------------------------------
       # Strip binaries (prod-ready)
