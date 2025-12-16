@@ -1,0 +1,98 @@
+# There's no @sha256 for Renovate to trigger rebuild whenever the parent
+# digest changes because we don't use anything from the parent image.
+FROM registry.access.redhat.com/ubi10/ubi:10.0 AS builder
+
+RUN mkdir -p /mnt/rootfs
+
+COPY ubi.repo /etc/yum.repos.d/ubi.repo
+
+# Install redhat-release and import the GPG key. We can then later install more packages and verify the signatures
+RUN \
+    dnf install --installroot /mnt/rootfs \
+        redhat-release \
+        --releasever 10 --setopt install_weak_deps=false --nodocs --nogpgcheck -y && \
+    rpm --root=/mnt/rootfs --import /mnt/rootfs/etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+
+RUN \
+    dnf install --installroot /mnt/rootfs --setopt=reposdir=/etc/yum.repos.d/ \
+        bash \
+        coreutils-single \
+        crypto-policies-scripts \
+        curl-minimal \
+        libdnf-plugin-subscription-manager \
+        findutils \
+        gdb-gdbserver \
+        glibc-minimal-langpack \
+        gzip \
+        langpacks-en \
+        libcurl-minimal \
+        rootfiles \
+        subscription-manager \
+        tar \
+        vim-minimal \
+        yum \
+        --releasever 10 --setopt install_weak_deps=false --nodocs -y && \
+    dnf --installroot /mnt/rootfs clean all
+
+RUN rm -rf /mnt/rootfs/var/cache/* /mnt/rootfs/var/log/dnf* /mnt/rootfs/var/log/yum.*
+
+# Setup support for subscription-manager secrets
+RUN cd /mnt/rootfs/etc && rm -rf ./pki/entitlement-host && ln -sf /run/secrets/etc-pki-entitlement ./pki/entitlement-host && \
+    ln -sf /run/secrets/rhsm ./rhsm-host
+RUN rm -f /mnt/rootfs/etc/systemd/system/multi-user.target.wants/rhsmcertd.service
+
+# Set install langs macro so that new rpms that get installed will
+# only install langs that we limit it to.
+RUN echo "%_install_langs C.utf8" > /mnt/rootfs/etc/rpm/macros.image-language-conf && \
+    echo "LANG=C.utf8" > /mnt/rootfs/etc/locale.conf
+
+# Double check this is needed
+RUN rm -f /mnt/rootfs/etc/sysconfig/network-scripts/ifcfg-*
+
+# Remove machine-id on pre generated images
+RUN rm -f /mnt/rootfs/etc/machine-id && touch /mnt/rootfs/etc/machine-id && chmod 0444 /mnt/rootfs/etc/machine-id
+
+# Remove the installed redhat.repo file
+RUN rm -f /mnt/rootfs/etc/yum.repos.d/redhat.repo
+
+# Manually mask off the systemd units and service so we don't get a login prompt
+RUN cd /mnt/rootfs/etc/systemd/system/ && ln -s /dev/null systemd-logind.service && \
+    ln -s /dev/null getty.target && ln -s /dev/null console-getty.service && \
+    ln -s /dev/null sys-fs-fuse-connections.mount && ln -s /dev/null systemd-remount-fs.service && \
+    ln -s /dev/null dev-hugepages.mount
+
+# opencryptoki still needs /run/lock/
+RUN install -d /mnt/rootfs/run/lock -m 0755 -o root -g root
+
+# Create files in /root (RHEL-84969)
+RUN systemd-tmpfiles --root=/mnt/rootfs --create /usr/lib/tmpfiles.d/rootfiles.conf
+
+FROM scratch
+
+LABEL maintainer="Red Hat, Inc." \
+      vendor="Red Hat, Inc."
+LABEL url="https://www.redhat.com"
+LABEL com.redhat.component="ubi10-container" \
+      name="ubi10" \
+      version="10.1" \
+      distribution-scope="public"
+
+# label for EULA
+LABEL com.redhat.license_terms="https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI"
+
+# labels for container catalog
+LABEL summary="Provides the latest release of Red Hat Universal Base Image 10."
+LABEL description="The Universal Base Image is designed and engineered to be the base layer for all of your containerized applications, middleware and utilities. This base image is freely redistributable, but Red Hat only supports Red Hat technologies through subscriptions for Red Hat products. This image is maintained by Red Hat and updated regularly."
+LABEL io.k8s.description="The Universal Base Image is designed and engineered to be the base layer for all of your containerized applications, middleware and utilities. This base image is freely redistributable, but Red Hat only supports Red Hat technologies through subscriptions for Red Hat products. This image is maintained by Red Hat and updated regularly."
+LABEL io.k8s.display-name="Red Hat Universal Base Image 10"
+LABEL io.openshift.expose-services=""
+LABEL io.openshift.tags="base rhel10"
+
+
+ENV container oci
+
+COPY --from=builder /mnt/rootfs/ /
+
+COPY --from=builder /etc/yum.repos.d/ubi.repo /etc/yum.repos.d/.
+
+CMD ["/bin/bash"]

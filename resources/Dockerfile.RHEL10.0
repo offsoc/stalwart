@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+FROM rockylinux/rockylinux:10 AS builder
+WORKDIR /build
+
+# 安装构建依赖和 rust
+RUN dnf update -y && \
+    dnf install -y dnf-plugins-core && \
+    dnf config-manager --set-enabled crb && \
+    dnf install -y --allowerasing clang gcc make binutils cmake curl git protobuf-devel sqlite-devel protobuf-compiler librdkafka-devel zlib-devel openssl-devel
+
+# ---- Rust ----
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup default stable
+
+ARG TARGETARCH
+COPY resources/libfdb_c.${TARGETARCH}.so /lib64/libfdb_c.so
+RUN chmod 755 /lib64/libfdb_c.so
+
+COPY . .
+RUN . $HOME/.cargo/env && cargo build --release -p stalwart --manifest-path=crates/main/Cargo.toml
+RUN . $HOME/.cargo/env && cargo build --release -p stalwart-cli
+RUN mkdir /output && cp target/release/stalwart /output/ && cp target/release/stalwart-cli /output/
+
+FROM registry.access.redhat.com/ubi10:10.0-1747220028
+WORKDIR /opt/stalwart
+RUN dnf update -y && dnf install -y ca-certificates && dnf clean all
+ARG TARGETARCH
+COPY resources/libfdb_c.${TARGETARCH}.so /lib64/libfdb_c.so
+RUN chmod 755 /lib64/libfdb_c.so
+COPY --from=builder /output/stalwart /usr/local/bin
+COPY --from=builder /output/stalwart-cli /usr/local/bin
+COPY ./resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod -R 755 /usr/local/bin && ldconfig
+CMD ["/usr/local/bin/stalwart"]
+VOLUME [ "/opt/stalwart" ]
+EXPOSE 443 25 110 587 465 143 993 995 4190 8080
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]

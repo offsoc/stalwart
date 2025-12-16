@@ -1,0 +1,145 @@
+name: Enterprise Multi-Arch Docker Build & Release
+
+permissions:
+  contents: write
+  packages: write
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  GHCR_IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: Dockerfile
+            tag: trixie
+          - dockerfile: resources/Dockerfile.EL9.6
+            tag: rhel9.6
+          - dockerfile: resources/Dockerfile.EL9.6
+            tag: elk9.6
+          - dockerfile: resources/Dockerfile.EL10.0
+            tag: rhel10.0
+          - dockerfile: resources/Dockerfile.EL10.0
+            tag: rkel10.0
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # 登录 GHCR
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 登录 Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 自动生成 Docker Hub 仓库
+      - name: Set Docker Hub image
+        id: dockerhub
+        run: |
+          REPO_NAME="${{ github.repository }}"
+          OWNER="${{ github.repository_owner }}"
+          HUB_IMAGE="$OWNER/${REPO_NAME##*/}"
+          echo "hub_image=$HUB_IMAGE" >> $GITHUB_OUTPUT
+
+      # 构建 + 推送 multi-arch 镜像
+      - name: Build & push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.GHCR_IMAGE }}:${{ matrix.tag }}
+            ${{ steps.dockerhub.outputs.hub_image }}:${{ matrix.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 构建本地镜像用于 artifact
+      - name: Build local image for artifact
+        run: |
+          mkdir -p artifacts
+          docker build -f ${{ matrix.dockerfile }} -t local:${{ matrix.tag }} .
+          docker save local:${{ matrix.tag }} -o artifacts/stalwart-${{ matrix.tag }}.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: image-${{ matrix.tag }}
+          path: artifacts/stalwart-${{ matrix.tag }}.tar
+
+      # 导出二进制
+      - name: Extract binaries
+        run: |
+          id=$(docker create local:${{ matrix.tag }})
+          docker cp $id:/usr/local/bin/stalwart ./artifacts/stalwart-${{ matrix.tag }}
+          docker cp $id:/usr/local/bin/stalwart-cli ./artifacts/stalwart-cli-${{ matrix.tag }}
+          docker rm $id
+
+      - name: Upload binaries artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: binaries-${{ matrix.tag }}
+          path: artifacts/stalwart-${{ matrix.tag }},artifacts/stalwart-cli-${{ matrix.tag }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+
+      # 动态生成 Release Notes，按 Dockerfile + 架构显示
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          echo "## Enterprise Multi-Arch Images & Binaries" > release_notes.md
+          echo "" >> release_notes.md
+          echo "| Dockerfile | Tag | GHCR | Docker Hub | Pull Commands | Binaries |" >> release_notes.md
+          echo "|------------|-----|------|------------|---------------|----------|" >> release_notes.md
+          for tag in trixie rhel9.6 rkel9.6 rhel10.0 rkel10.0; do
+            echo "| ${tag} | ${tag} | ${{ env.GHCR_IMAGE }}:${tag} | ${{ github.repository_owner }}/stalwart:${tag} | \`docker pull ${{ env.GHCR_IMAGE }}:${tag}\`<br>\`docker pull ${{ github.repository_owner }}/stalwart:${tag}\` | [stalwart](./artifacts/stalwart-${tag})<br>[stalwart-cli](./artifacts/stalwart-cli-${tag}) |" >> release_notes.md
+          done
+
+      # 创建 GitHub Release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Release ${{ github.ref_name }}"
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+
+      # 上传所有二进制到 Release
+      - name: Upload binaries to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/stalwart-* artifacts/stalwart-cli-*
