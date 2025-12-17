@@ -56,13 +56,18 @@ jobs:
           ldconfig -p | grep libfdb_c
 
       # ------------------------------------------------------------
-      # Rust toolchain (pinned)
+      # Rust toolchain (Pinned to 1.92, Edition 2024)
       # ------------------------------------------------------------
-      - name: Install Rust toolchain
+      - name: Install Rust toolchain (1.92)
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.76.0
+          toolchain: 1.92.0
           components: rustfmt, clippy
+
+      - name: Show Rust version
+        run: |
+          rustc --version
+          cargo --version
 
       # ------------------------------------------------------------
       # Cargo cache
@@ -80,8 +85,8 @@ jobs:
       - name: Build stalwart (release, sqlite)
         run: |
           set -euxo pipefail
-          cargo build --manifest-path=crates/main/Cargo.toml --release
-          cargo build --manifest-path=crates/cli/Cargo.toml --release
+          cargo build --manifest-path crates/main/Cargo.toml --release
+          cargo build --manifest-path crates/cli/Cargo.toml --release
 
       # ------------------------------------------------------------
       # Strip binaries (prod-ready)
