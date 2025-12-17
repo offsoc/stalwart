@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rockylinux/rockylinux:9-ubi-init AS builder
+FROM rockylinux/rockylinux:9-ubi AS builder
 WORKDIR /build
 
 # 安装构建依赖和 rust
@@ -21,7 +21,7 @@ RUN . $HOME/.cargo/env && cargo build --release -p stalwart --manifest-path=crat
 RUN . $HOME/.cargo/env && cargo build --release -p stalwart-cli
 RUN mkdir /output && cp target/release/stalwart /output/ && cp target/release/stalwart-cli /output/
 
-FROM rockylinux/rockylinux:9-ubi-init
+FROM rockylinux/rockylinux:9-ubi
 WORKDIR /opt/stalwart
 RUN dnf update -y && dnf install -y ca-certificates && dnf clean all
 ARG TARGETARCH

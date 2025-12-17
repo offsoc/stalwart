@@ -22,7 +22,7 @@ RUN . $HOME/.cargo/env && cargo build --release -p stalwart --manifest-path=crat
 RUN . $HOME/.cargo/env && cargo build --release -p stalwart-cli
 RUN mkdir /output && cp target/release/stalwart /output/ && cp target/release/stalwart-cli /output/
 
-FROM registry.access.redhat.com/ubi10:10.0-1747220028
+FROM registry.access.redhat.com/ubi10:10.1
 WORKDIR /opt/stalwart
 RUN dnf update -y && dnf install -y ca-certificates && dnf clean all
 ARG TARGETARCH
