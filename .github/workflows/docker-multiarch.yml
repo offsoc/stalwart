@@ -151,13 +151,13 @@ jobs:
       # Generate SBOM
       # -----------------------------
       - name: Generate SBOM
-        uses: anchore/syft-action@v0.16.0
+        uses: anchore/sbom-action@v0.20.9
         with:
           image: stalwart-local:${{ steps.tag.outputs.tag }}-amd64
           output: sbom-${{ steps.tag.outputs.tag }}-amd64.json
 
       - name: Generate SBOM (arm64)
-        uses: anchore/syft-action@v0.16.0
+        uses: anchore/sbom-action@v0.20.9
         with:
           image: stalwart-local:${{ steps.tag.outputs.tag }}-arm64
           output: sbom-${{ steps.tag.outputs.tag }}-arm64.json
