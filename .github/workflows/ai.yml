@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write      # ★ 用于 Release
+  contents: write
   packages: write
-  id-token: write      # ★ Cosign OIDC
+  id-token: write
 
 env:
   GHCR_IMAGE: ghcr.io/${{ github.repository }}
@@ -20,9 +20,7 @@ env:
 
 jobs:
   build-release:
-    name: Build / Push / Sign / Export / Release
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
@@ -40,19 +38,15 @@ jobs:
       - uses: actions/checkout@v4
 
       # ------------------------------------------------------------
-      # 2. QEMU
+      # 2. QEMU / Buildx
       # ------------------------------------------------------------
       - uses: docker/setup-qemu-action@v3
-
-      # ------------------------------------------------------------
-      # 3. Buildx（固定 BuildKit）
-      # ------------------------------------------------------------
       - uses: docker/setup-buildx-action@v3
         with:
-          driver-opts: |
-            image=moby/buildkit:buildx-stable-1
+          driver-opts: image=moby/buildkit:buildx-stable-1
+
       # ------------------------------------------------------------
-      # 4. Registry 登录
+      # 3. Registry 登录
       # ------------------------------------------------------------
       - uses: docker/login-action@v3
         with:
@@ -67,7 +61,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # ------------------------------------------------------------
-      # 5. 解析 Flavor / Version
+      # 4. Resolve Flavor / Version
       # ------------------------------------------------------------
       - name: Resolve tags
         id: tag
@@ -90,11 +84,9 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       # ------------------------------------------------------------
-      # 6. Build & Push（Multi-Arch）
+      # 5. Build & Push Images（SBOM + Provenance）
       # ------------------------------------------------------------
-      - name: Build and push images
-        id: build
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -107,34 +99,43 @@ jobs:
           provenance: true
 
       # ------------------------------------------------------------
-      # 7. 导出二进制（buildx output，架构正确）
+      # 6. 导出二进制（artifacts stage，安全）
       # ------------------------------------------------------------
-      - name: Export binaries (amd64)
+      - name: Export binaries
         run: |
-          mkdir -p dist/amd64
-          docker buildx build \
-            --platform linux/amd64 \
-            --file ${{ matrix.dockerfile }} \
-            --output type=local,dest=dist/amd64 \
-            .
+          for arch in amd64 arm64; do
+            mkdir -p dist/$arch
+            docker buildx build \
+              --platform linux/$arch \
+              --file ${{ matrix.dockerfile }} \
+              --target artifacts \
+              --output type=local,dest=dist/$arch \
+              .
+          done
 
-      - name: Export binaries (arm64)
+      # ------------------------------------------------------------
+      # 7. 打包 + 校验
+      # ------------------------------------------------------------
+      - name: Package binaries
         run: |
-          mkdir -p dist/arm64
-          docker buildx build \
-            --platform linux/arm64 \
-            --file ${{ matrix.dockerfile }} \
-            --output type=local,dest=dist/arm64 \
-            .
+          cd dist
+          for arch in amd64 arm64; do
+            tar czf stalwart-${{ steps.tag.outputs.flavor }}-${{ steps.tag.outputs.version }}-$arch.tar.gz $arch
+          done
+          sha256sum *.tar.gz > SHA256SUMS
 
-      - name: Upload binaries
-        uses: actions/upload-artifact@v4
+      # ------------------------------------------------------------
+      # 8. 生成 SBOM（Release 可下载）
+      # ------------------------------------------------------------
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0.20.9
         with:
-          name: binaries-${{ steps.tag.outputs.flavor }}
-          path: dist/
+          image: ${{ env.GHCR_IMAGE }}:${{ steps.tag.outputs.flavor }}-${{ steps.tag.outputs.version }}
+          format: spdx-json
+          output-file: sbom-${{ steps.tag.outputs.flavor }}.spdx.json
 
       # ------------------------------------------------------------
-      # 8. Cosign（Keyless）
+      # 9. Cosign（Keyless）
       # ------------------------------------------------------------
       - uses: sigstore/cosign-installer@v3
 
@@ -148,30 +149,42 @@ jobs:
             ${{ env.DOCKERHUB_IMAGE }}:${{ steps.tag.outputs.flavor }}-${{ steps.tag.outputs.version }}
 
       # ------------------------------------------------------------
-      # 9. Release（仅 tag 触发）
+      # 9.1 Cosign 签名 Release 二进制（Blob）
+      # ------------------------------------------------------------
+      - name: Sign release artifacts
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          for f in dist/*.tar.gz dist/SHA256SUMS; do
+            cosign sign-blob --yes \
+              --output-signature ${f}.sig \
+              --output-certificate ${f}.crt \
+              $f
+          done
+
+      # ------------------------------------------------------------
+      # 10. Upload Artifacts
+      # ------------------------------------------------------------
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.tag.outputs.flavor }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sig
+            dist/*.crt
+            dist/SHA256SUMS
+            sbom-*.spdx.json
+
+      # ------------------------------------------------------------
+      # 11. GitHub Release（仅 Tag）
       # ------------------------------------------------------------
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
-          body: |
-            ## 🐳 Container Images
-
-            **Flavor:** `${{ steps.tag.outputs.flavor }}`  
-            **Architectures:** `amd64`, `arm64`
-
-            ### GHCR
-            ```
-            ${{ env.GHCR_IMAGE }}:${{ steps.tag.outputs.flavor }}-${{ steps.tag.outputs.version }}
-            ```
-
-            ### Docker Hub
-            ```
-            ${{ env.DOCKERHUB_IMAGE }}:${{ steps.tag.outputs.flavor }}-${{ steps.tag.outputs.version }}
-            ```
-
-            ✔ Multi-Arch Manifest  
-            ✔ SBOM + Provenance  
-            ✔ Cosign Signed (Keyless)
+          files: |
+            dist/*.tar.gz
+            dist/*.sig
+            dist/*.crt
+            dist/SHA256SUMS
+            sbom-*.spdx.json
