@@ -23,7 +23,7 @@ RUN mkdir /output && cp target/release/stalwart /output/ && cp target/release/st
 
 FROM rockylinux/rockylinux:9-ubi
 WORKDIR /opt/stalwart
-RUN dnf update -y && dnf install -y ca-certificates && dnf clean all
+RUN dnf install -y ca-certificates && dnf clean all
 ARG TARGETARCH
 COPY resources/libfdb_c.${TARGETARCH}.so /lib64/libfdb_c.so
 RUN chmod 755 /lib64/libfdb_c.so
