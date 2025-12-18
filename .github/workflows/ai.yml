@@ -50,8 +50,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
         with:
           driver-opts: |
-            image=ghcr.io/docker/buildkit:v0.12.5
-
+            image=moby/buildkit:buildx-stable-1
       # ------------------------------------------------------------
       # 4. Registry 登录
       # ------------------------------------------------------------
