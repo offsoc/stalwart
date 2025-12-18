@@ -1,8 +1,9 @@
-name: Build & Push Multi-Arch Docker Images (Enterprise)
+name: Build & Release Multi-Arch Docker Images (Enterprise)
 
 permissions:
   contents: write
   packages: write
+  id-token: write   # Cosign / OIDC
 
 on:
   push:
@@ -29,15 +30,23 @@ jobs:
           - resources/Dockerfile.RHEL10.0
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      # -----------------------------
+      # 1. Checkout
+      # -----------------------------
+      - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      # -----------------------------
+      # 2. Setup QEMU / Buildx
+      # -----------------------------
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=ghcr.io/docker/buildkit:v0.12.5
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
+      # -----------------------------
+      # 3. Login GHCR
+      # -----------------------------
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -45,36 +54,41 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # -----------------------------
+      # 4. Login Docker Hub
+      # -----------------------------
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # -----------------------------
-      # 自动获取 Docker Hub Repo
+      # 5. Set Docker Hub Repo
       # -----------------------------
       - name: Set Docker Hub Repo
         id: dockerhub
         run: |
-          DOCKER_HUB_REPO="${{ github.repository_owner }}/stalwart"
-          echo "DOCKER_HUB_REPO=$DOCKER_HUB_REPO" >> $GITHUB_OUTPUT
+          echo "repo=${{ secrets.DOCKERHUB_USERNAME }}/stalwart" >> $GITHUB_OUTPUT
 
-      - name: Extract Dockerfile tag
+      # -----------------------------
+      # 6. Resolve Dockerfile tag
+      # -----------------------------
+      - name: Resolve flavor tag
         id: tag
         run: |
           case "${{ matrix.dockerfile }}" in
-            Dockerfile) tag=bookworm ;;
-            *RHEL9.6*) tag=rhel9.6 ;;
-            *RKEL9.6*) tag=rkel9.6 ;;
-            *RHEL10.0*) tag=rhel10.0 ;;
-            *RKEL10.0*) tag=rkel10.0 ;;
-            *) tag=custom ;;
+            Dockerfile) echo "tag=bookworm" >> $GITHUB_OUTPUT ;;
+            *RHEL9.6*) echo "tag=rhel9.6" >> $GITHUB_OUTPUT ;;
+            *RKEL9.6*) echo "tag=rkel9.6" >> $GITHUB_OUTPUT ;;
+            *RHEL10.0*) echo "tag=rhel10.0" >> $GITHUB_OUTPUT ;;
+            *RKEL10.0*) echo "tag=rkel10.0" >> $GITHUB_OUTPUT ;;
+            *) echo "tag=custom" >> $GITHUB_OUTPUT ;;
           esac
-          echo "tag=$tag" >> $GITHUB_OUTPUT
 
       # -----------------------------
-      # Build & Push Multi-Arch Image
+      # 7. Build & Push Multi-Arch Images
       # -----------------------------
       - name: Build & Push Multi-Arch Image
         uses: docker/build-push-action@v6
@@ -85,46 +99,42 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
-            ${{ steps.dockerhub.outputs.DOCKER_HUB_REPO }}:${{ steps.tag.outputs.tag }}
+            docker.io/${{ steps.dockerhub.outputs.repo }}:${{ steps.tag.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          sbom: true
+          provenance: true
 
       # -----------------------------
-      # Build local images for artifact export
+      # 8. Build local images for artifact export
       # -----------------------------
-      - name: Build amd64 image locally
+      - name: Build local images (amd64 / arm64)
         run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            -f ${{ matrix.dockerfile }} \
-            -t stalwart-local:${{ steps.tag.outputs.tag }}-amd64 \
-            --load .
-
-      - name: Build arm64 image locally
-        run: |
-          docker buildx build \
-            --platform linux/arm64 \
-            -f ${{ matrix.dockerfile }} \
-            -t stalwart-local:${{ steps.tag.outputs.tag }}-arm64 \
-            --load .
+          for arch in amd64 arm64; do
+            docker buildx build \
+              --platform linux/$arch \
+              -f ${{ matrix.dockerfile }} \
+              -t stalwart-local:${{ steps.tag.outputs.tag }}-$arch \
+              --load .
+          done
 
       # -----------------------------
-      # Save images as tar
+      # 9. Save images as tar
       # -----------------------------
       - name: Save Docker images as tar
         run: |
-          docker save stalwart-local:${{ steps.tag.outputs.tag }}-amd64 -o stalwart-image-${{ steps.tag.outputs.tag }}-amd64.tar
-          docker save stalwart-local:${{ steps.tag.outputs.tag }}-arm64 -o stalwart-image-${{ steps.tag.outputs.tag }}-arm64.tar
+          for arch in amd64 arm64; do
+            docker save stalwart-local:${{ steps.tag.outputs.tag }}-$arch \
+              -o stalwart-image-${{ steps.tag.outputs.tag }}-$arch.tar
+          done
 
-      - name: Upload Docker image tar
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: stalwart-image-${{ steps.tag.outputs.tag }}
-          path: |
-            stalwart-image-${{ steps.tag.outputs.tag }}-*.tar
+          name: images-${{ steps.tag.outputs.tag }}
+          path: stalwart-image-${{ steps.tag.outputs.tag }}-*.tar
 
       # -----------------------------
-      # Extract binaries and calculate SHA256
+      # 10. Extract binaries + SHA256
       # -----------------------------
       - name: Extract binaries and calculate SHA256
         run: |
@@ -137,20 +147,18 @@ jobs:
             sha256sum stalwart-cli-${{ steps.tag.outputs.tag }}-$arch > sha256-stalwart-cli-${{ steps.tag.outputs.tag }}-$arch.txt
           done
 
-      - name: Upload binaries and SHA256
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: stalwart-binaries-${{ steps.tag.outputs.tag }}
+          name: binaries-${{ steps.tag.outputs.tag }}
           path: |
             stalwart-${{ steps.tag.outputs.tag }}-*
             stalwart-cli-${{ steps.tag.outputs.tag }}-*
-            sha256-stalwart-${{ steps.tag.outputs.tag }}-*
-            sha256-stalwart-cli-${{ steps.tag.outputs.tag }}-*
+            sha256-*.txt
 
       # -----------------------------
-      # Generate SBOM
+      # 11. Generate SBOM
       # -----------------------------
-      - name: Generate SBOM
+      - name: Generate SBOM (amd64)
         uses: anchore/sbom-action@v0.20.9
         with:
           image: stalwart-local:${{ steps.tag.outputs.tag }}-amd64
@@ -162,14 +170,13 @@ jobs:
           image: stalwart-local:${{ steps.tag.outputs.tag }}-arm64
           output: sbom-${{ steps.tag.outputs.tag }}-arm64.json
 
-      - name: Upload SBOMs
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: sbom-${{ steps.tag.outputs.tag }}
-          path: sbom-${{ steps.tag.outputs.tag }}-*.json
+          path: sbom-*.json
 
       # -----------------------------
-      # Sign Docker images (Cosign)
+      # 12. Cosign keyless signing
       # -----------------------------
       - name: Install Cosign
         run: |
@@ -177,52 +184,68 @@ jobs:
           chmod +x cosign
           sudo mv cosign /usr/local/bin/
 
-      - name: Cosign sign GHCR images
+      - name: Cosign sign GHCR image (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: "true"
         run: |
-          cosign sign --key ${{ secrets.COSIGN_KEY }} ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+          cosign sign --yes ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
 
-      - name: Cosign sign Docker Hub images
+      - name: Cosign sign Docker Hub image (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: "true"
         run: |
-          cosign sign --key ${{ secrets.COSIGN_KEY }} ${{ steps.dockerhub.outputs.DOCKER_HUB_REPO }}:${{ steps.tag.outputs.tag }}
+          cosign sign --yes docker.io/${{ steps.dockerhub.outputs.repo }}:${{ steps.tag.outputs.tag }}
+
+      # -----------------------------
+      # 13. Generate release manifest
+      # -----------------------------
+      - name: Generate release manifest (JSON)
+        run: |
+          jq -n \
+            --arg version "${{ github.ref_name }}" \
+            --arg image "${{ env.IMAGE_NAME }}" \
+            --arg dockerhub "docker.io/${{ steps.dockerhub.outputs.repo }}" \
+            --arg tag "${{ steps.tag.outputs.tag }}" \
+            '{
+              version: $version,
+              tag: $tag,
+              images: {
+                ghcr: "\($image):\($tag)",
+                dockerhub: "\($dockerhub):\($tag)"
+              },
+              architectures: ["amd64","arm64"],
+              signed: true,
+              sbom: true,
+              provenance: true
+            }' > release-manifest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: release-manifest.json
 
   release:
     needs: build-and-push
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Generate Release Notes with SHA256
-        run: |
-          echo "## Enterprise Multi-Arch Images & Binaries" > release_notes.md
-          echo "" >> release_notes.md
-          echo "| Tag | Arch | GHCR | Docker Hub | Pull Command | Binaries | SHA256 | SBOM |" >> release_notes.md
-          echo "|-----|------|------|------------|--------------|----------|--------|------|" >> release_notes.md
-          for tag in bookworm rhel9.6 rkel9.6 rhel10.0 rkel10.0; do
-            for arch in amd64 arm64; do
-              stalwart_sha=$(cat artifacts/sha256-stalwart-${tag}-${arch}.txt | awk '{print $1}')
-              cli_sha=$(cat artifacts/sha256-stalwart-cli-${tag}-${arch}.txt | awk '{print $1}')
-              echo "| $tag | $arch | ${{ env.IMAGE_NAME }}:$tag | ${{ github.repository_owner }}/stalwart:$tag | \`docker pull ${{ env.IMAGE_NAME }}:$tag\`<br>\`docker pull ${{ github.repository_owner }}/stalwart:$tag\` | [stalwart](./artifacts/stalwart-$tag-$arch)<br>[stalwart-cli](./artifacts/stalwart-cli-$tag-$arch) | stalwart:$stalwart_sha<br>cli:$cli_sha | [SBOM](./artifacts/sbom-$tag-$arch.json) |" >> release_notes.md
-            done
-          done
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: "Release ${{ github.ref_name }}"
-          body_path: release_notes.md
           draft: false
           prerelease: false
-
-      - name: Upload all artifacts to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/stalwart-*.tar artifacts/stalwart-cli-* artifacts/sha256-stalwart-* artifacts/sbom-*.json artifacts/stalwart-image-*.tar
-
+          files: |
+            artifacts/stalwart-*.tar
+            artifacts/stalwart-cli-*
+            artifacts/sha256-*.txt
+            artifacts/sbom-*.json
+            artifacts/release-manifest.json
