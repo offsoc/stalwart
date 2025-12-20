@@ -1,15 +1,18 @@
 # -------------------------
-# 1️⃣ Builder base
+# 1️⃣ Builder base (nightly Rust)
 # -------------------------
 FROM --platform=$BUILDPLATFORM lukemathwalker/cargo-chef:latest-rust-slim-trixie AS chef
 WORKDIR /build
+
+# 切换到 nightly Rust
+RUN rustup default nightly
 
 # -------------------------
 # 2️⃣ Planner
 # -------------------------
 FROM --platform=$BUILDPLATFORM chef AS planner
 COPY . .
-RUN cargo chef prepare --recipe-path /recipe.json
+RUN cargo +nightly chef prepare --recipe-path /recipe.json
 
 # -------------------------
 # 3️⃣ Builder
@@ -18,6 +21,7 @@ FROM --platform=$BUILDPLATFORM chef AS builder
 ARG TARGETPLATFORM
 ARG RUSTFLAGS
 ARG CARGO_TARGET
+
 # 选择目标架构和 linker
 RUN case "${TARGETPLATFORM}" in \
     "linux/arm64") echo "aarch64-unknown-linux-gnu" > /target.txt && echo "-C linker=aarch64-linux-gnu-gcc" > /flags.txt ;; \
@@ -25,7 +29,7 @@ RUN case "${TARGETPLATFORM}" in \
     *) echo "Unsupported platform" && exit 1 ;; \
     esac
 
-# 安装交叉编译工具链
+# 安装交叉编译工具链和依赖
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -yq --no-install-recommends \
@@ -36,9 +40,9 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 # 安装 Rust target
 RUN rustup target add "$(cat /target.txt)"
 
-# cargo-chef cook
+# cargo-chef cook (nightly)
 COPY --from=planner /recipe.json /recipe.json
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook \
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo +nightly chef cook \
     --target "$(cat /target.txt)" \
     --release \
     --no-default-features \
@@ -51,7 +55,7 @@ RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook \
 COPY . .
 
 # 限制并行线程，降低内存消耗
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo build \
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo +nightly build \
     --target "$(cat /target.txt)" \
     --release \
     -p stalwart \
@@ -59,7 +63,7 @@ RUN RUSTFLAGS="$(cat /flags.txt)" cargo build \
     --features "sqlite postgres mysql rocks s3 redis azure nats enterprise" \
     --jobs 1
 
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo build \
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo +nightly build \
     --target "$(cat /target.txt)" \
     --release \
     -p stalwart-cli \
