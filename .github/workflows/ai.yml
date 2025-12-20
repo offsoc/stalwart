@@ -1,4 +1,4 @@
-name: Build & Push Multi-Arch Docker Images
+name: Build & Push Multi-Arch Docker Images (Native ARM64)
 
 permissions:
   contents: read
@@ -11,97 +11,153 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+############################################################
+# Job 1: Build amd64 (native on ubuntu-latest)
+############################################################
 jobs:
-  build-and-push:
+  build-amd64:
+    name: Build amd64 images
     runs-on: ubuntu-latest
+
     strategy:
+      fail-fast: false
+      max-parallel: 1
       matrix:
         dockerfile:
           - Dockerfile
           - resources/Dockerfile.RHEL9.6
           - resources/Dockerfile.RKEL9.6
           - resources/Dockerfile.RKEL10.0
-          - resources/Dockerfile.RHEL10.0 # 修正拼写
-        platform:
-          - linux/amd64
-          - linux/arm64
-    env:
-      IMAGE_NAME: ghcr.io/${{ github.repository }}
+          - resources/Dockerfile.RHEL10.0
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5.0.1
+      - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo docker system prune -af
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
+      - name: Login GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Dockerfile tag
+      - name: Resolve tag
         id: tag
         run: |
-          file=${{ matrix.dockerfile }}
-          platform=${{ matrix.platform }}
-          case "$file" in
-            Dockerfile) echo "tag=bookworm" >> $GITHUB_OUTPUT ;;
-            resources/Dockerfile.RHEL9.6) echo "tag=rhel9.6" >> $GITHUB_OUTPUT ;;
-            resources/Dockerfile.RKEL9.6) echo "tag=rkel9.6" >> $GITHUB_OUTPUT ;;
-            resources/Dockerfile.RKEL10.0) echo "tag=rkel10.0" >> $GITHUB_OUTPUT ;;
-            resources/Dockerfile.RHEL10) echo "tag=rhel10.0" >> $GITHUB_OUTPUT ;;
-            *) echo "tag=custom" >> $GITHUB_OUTPUT ;;
+          case "${{ matrix.dockerfile }}" in
+            Dockerfile) t=bookworm ;;
+            *RHEL9.6*) t=rhel9.6 ;;
+            *RKEL9.6*) t=rkel9.6 ;;
+            *RHEL10.0*) t=rhel10.0 ;;
+            *RKEL10.0*) t=rkel10.0 ;;
+            *) t=custom ;;
           esac
-          safe_platform=$(echo "${platform}" | tr '/' '-')
-          echo "safe_platform=${safe_platform}" >> $GITHUB_OUTPUT
+          echo "tag=$t" >> $GITHUB_OUTPUT
 
-      - name: Build and push Docker image
+      - name: Build & push amd64
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          platforms: ${{ matrix.platform }}
+          platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-amd64
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
 
-      - name: Build Docker image locally for artifact export
-        run: |
-          docker build -f ${{ matrix.dockerfile }} -t stalwart-local:${{ steps.tag.outputs.tag }} .
+############################################################
+# Job 2: Build arm64 (NATIVE arm64 runner, NO QEMU)
+############################################################
+  build-arm64:
+    name: Build arm64 images (native)
+    needs: build-amd64
 
-      - name: Save Docker image as tar
-        run: |
-          docker save -o stalwart-image-${{ steps.tag.outputs.tag }}.tar stalwart-local:${{ steps.tag.outputs.tag }}
+    # ✅ GitHub 官方 ARM64 Runner（Team / Enterprise）
+    runs-on: ubuntu-24.04-arm64
 
-      - name: Upload Docker image tar as artifact
-        uses: actions/upload-artifact@v5
+    # 如果你用自托管 ARM64，改成下面这一行：
+    # runs-on: [self-hosted, linux, arm64]
+
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        dockerfile:
+          - Dockerfile
+          - resources/Dockerfile.RHEL9.6
+          - resources/Dockerfile.RKEL9.6
+          - resources/Dockerfile.RKEL10.0
+          - resources/Dockerfile.RHEL10.0
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
         with:
-          name: stalwart-image-${{ steps.tag.outputs.tag }}-${{ steps.tag.outputs.safe_platform }}
-          path: stalwart-image-${{ steps.tag.outputs.tag }}.tar
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract binaries from image
+      - name: Resolve tag
+        id: tag
         run: |
-          id=$(docker create stalwart-local:${{ steps.tag.outputs.tag }})
-          docker cp $id:/usr/local/bin/stalwart ./stalwart-${{ steps.tag.outputs.tag }} || true
-          docker cp $id:/usr/local/bin/stalwart-cli ./stalwart-cli-${{ steps.tag.outputs.tag }} || true
-          docker rm $id
+          case "${{ matrix.dockerfile }}" in
+            Dockerfile) t=bookworm ;;
+            *RHEL9.6*) t=rhel9.6 ;;
+            *RKEL9.6*) t=rkel9.6 ;;
+            *RHEL10.0*) t=rhel10.0 ;;
+            *RKEL10.0*) t=rkel10.0 ;;
+            *) t=custom ;;
+          esac
+          echo "tag=$t" >> $GITHUB_OUTPUT
 
-      - name: Upload binaries as artifact
-        uses: actions/upload-artifact@v5
+      - name: Build & push arm64 (native)
+        uses: docker/build-push-action@v6
         with:
-          name: stalwart-binaries-${{ steps.tag.outputs.tag }}-${{ steps.tag.outputs.safe_platform }}
-          path: |
-            stalwart-${{ steps.tag.outputs.tag }}
-            stalwart-cli-${{ steps.tag.outputs.tag }}
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
 
-# 说明：
-# 1. 修正了 Dockerfile 路径拼写错误。
-# 2. 增加了 buildx 缓存，提升多次构建速度。
-# 3. 所有平台和所有 Dockerfile 变体的二进制产物都会被上传，命名区分，方便下载和溯源。
-# 4. 保留了多平台推送和 tag 逻辑。
+############################################################
+# Job 3: Create multi-arch manifest
+############################################################
+  manifest:
+    name: Create multi-arch manifests
+    needs: [build-amd64, build-arm64]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifests
+        run: |
+          set -e
+          for tag in bookworm rhel9.6 rkel9.6 rhel10.0 rkel10.0; do
+            docker manifest create \
+              ${{ env.IMAGE_NAME }}:$tag \
+              --amend ${{ env.IMAGE_NAME }}:$tag-amd64 \
+              --amend ${{ env.IMAGE_NAME }}:$tag-arm64
+
+            docker manifest push ${{ env.IMAGE_NAME }}:$tag
+          done
