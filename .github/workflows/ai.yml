@@ -27,7 +27,6 @@ jobs:
       max-parallel: 1
       matrix:
         dockerfile:
-          - Dockerfile
           - resources/Dockerfile.RHEL9.6
           - resources/Dockerfile.RKEL9.6
           - resources/Dockerfile.RKEL10.0
@@ -54,7 +53,6 @@ jobs:
         id: tag
         run: |
           case "${{ matrix.dockerfile }}" in
-            Dockerfile) t=bookworm ;;
             *RHEL9.6*) t=rhel9.6 ;;
             *RKEL9.6*) t=rkel9.6 ;;
             *RHEL10.0*) t=rhel10.0 ;;
@@ -92,7 +90,6 @@ jobs:
       max-parallel: 1
       matrix:
         dockerfile:
-          - Dockerfile
           - resources/Dockerfile.RHEL9.6
           - resources/Dockerfile.RKEL9.6
           - resources/Dockerfile.RKEL10.0
@@ -114,7 +111,6 @@ jobs:
         id: tag
         run: |
           case "${{ matrix.dockerfile }}" in
-            Dockerfile) t=bookworm ;;
             *RHEL9.6*) t=rhel9.6 ;;
             *RKEL9.6*) t=rkel9.6 ;;
             *RHEL10.0*) t=rhel10.0 ;;
@@ -153,7 +149,7 @@ jobs:
       - name: Create and push manifests
         run: |
           set -e
-          for tag in bookworm rhel9.6 rkel9.6 rhel10.0 rkel10.0; do
+          for tag in  rhel9.6 rkel9.6 rhel10.0 rkel10.0; do
             docker manifest create \
               ${{ env.IMAGE_NAME }}:$tag \
               --amend ${{ env.IMAGE_NAME }}:$tag-amd64 \
