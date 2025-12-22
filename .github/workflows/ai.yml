@@ -1,30 +1,33 @@
-name: Build & Push Multi-Arch Docker Images (Native ARM64)
+name: Build & Release Multi-Arch Images (Enterprise Final)
 
 permissions:
-  contents: read
-  packages: write
+  contents: write          # release
+  packages: write          # ghcr
+  id-token: write          # cosign OIDC
 
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}
+  DOCKER_BUILDKIT: 1
 
 ############################################################
-# Job 1: Build amd64 (native on ubuntu-latest)
+# Job 1: Build amd64
 ############################################################
 jobs:
   build-amd64:
-    name: Build amd64 images
+    name: Build amd64
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
         dockerfile:
           - resources/Dockerfile.RHEL9.6
@@ -38,11 +41,12 @@ jobs:
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo docker system prune -af
+          sudo docker system prune -af || true
 
       - uses: docker/setup-buildx-action@v3
 
       - name: Login GHCR
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -57,33 +61,63 @@ jobs:
             *RKEL9.6*) t=rkel9.6 ;;
             *RHEL10.0*) t=rhel10.0 ;;
             *RKEL10.0*) t=rkel10.0 ;;
-            *) t=custom ;;
           esac
           echo "tag=$t" >> $GITHUB_OUTPUT
 
-      - name: Build & push amd64
+      # ---------- builder: binaries ----------
+      - name: Build binaries (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: builder
+          platforms: linux/amd64
+          outputs: type=local,dest=./out
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,scope=amd64,mode=min
+
+      - name: Prepare binaries (amd64)
+        run: |
+          mkdir -p artifacts
+          cp out/output/stalwart artifacts/stalwart-${{ steps.tag.outputs.tag }}-amd64
+          cp out/output/stalwart-cli artifacts/stalwart-cli-${{ steps.tag.outputs.tag }}-amd64
+          chmod +x artifacts/*
+          sha256sum artifacts/* > artifacts/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ steps.tag.outputs.tag }}-amd64
+          path: artifacts/
+
+      # ---------- final image ----------
+      - name: Build image (amd64)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-amd64
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,scope=amd64,mode=min
+          load: true
+
+      - name: Save image (amd64)
+        run: |
+          docker save ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-amd64 \
+            | gzip > image-${{ steps.tag.outputs.tag }}-amd64.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ steps.tag.outputs.tag }}-amd64
+          path: image-${{ steps.tag.outputs.tag }}-amd64.tar.gz
 
 ############################################################
-# Job 2: Build arm64 (NATIVE arm64 runner, NO QEMU)
+# Job 2: Build arm64 (native)
 ############################################################
   build-arm64:
-    name: Build arm64 images (native)
-    needs: build-amd64
-
-    # ✅ GitHub 官方 ARM64 Runner（Team / Enterprise）
+    name: Build arm64
     runs-on: ubuntu-24.04-arm64
-
-    # 如果你用自托管 ARM64，改成下面这一行：
-    # runs-on: [self-hosted, linux, arm64]
 
     strategy:
       fail-fast: false
@@ -97,10 +131,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: docker/setup-buildx-action@v3
 
       - name: Login GHCR
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -115,30 +149,67 @@ jobs:
             *RKEL9.6*) t=rkel9.6 ;;
             *RHEL10.0*) t=rhel10.0 ;;
             *RKEL10.0*) t=rkel10.0 ;;
-            *) t=custom ;;
           esac
           echo "tag=$t" >> $GITHUB_OUTPUT
 
-      - name: Build & push arm64 (native)
+      - name: Build binaries (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: builder
+          platforms: linux/arm64
+          outputs: type=local,dest=./out
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,scope=arm64,mode=min
+
+      - name: Prepare binaries (arm64)
+        run: |
+          mkdir -p artifacts
+          cp out/output/stalwart artifacts/stalwart-${{ steps.tag.outputs.tag }}-arm64
+          cp out/output/stalwart-cli artifacts/stalwart-cli-${{ steps.tag.outputs.tag }}-arm64
+          chmod +x artifacts/*
+          sha256sum artifacts/* > artifacts/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ steps.tag.outputs.tag }}-arm64
+          path: artifacts/
+
+      - name: Build image (arm64)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/arm64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,scope=arm64,mode=min
+          load: true
+
+      - name: Save image (arm64)
+        run: |
+          docker save ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-arm64 \
+            | gzip > image-${{ steps.tag.outputs.tag }}-arm64.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ steps.tag.outputs.tag }}-arm64
+          path: image-${{ steps.tag.outputs.tag }}-arm64.tar.gz
 
 ############################################################
-# Job 3: Create multi-arch manifest
+# Job 3: Manifest + Release + SBOM + Cosign
 ############################################################
-  manifest:
-    name: Create multi-arch manifests
+  release:
+    name: Release / SBOM / Sign
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-amd64, build-arm64]
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Login GHCR
         uses: docker/login-action@v3
         with:
@@ -146,14 +217,42 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create and push manifests
+      # ---------- manifest ----------
+      - name: Create multi-arch manifests
         run: |
-          set -e
-          for tag in  rhel9.6 rkel9.6 rhel10.0 rkel10.0; do
+          for tag in rhel9.6 rkel9.6 rhel10.0 rkel10.0; do
             docker manifest create \
               ${{ env.IMAGE_NAME }}:$tag \
               --amend ${{ env.IMAGE_NAME }}:$tag-amd64 \
               --amend ${{ env.IMAGE_NAME }}:$tag-arm64
-
             docker manifest push ${{ env.IMAGE_NAME }}:$tag
           done
+
+      # ---------- SBOM ----------
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate SBOMs
+        run: |
+          mkdir sbom
+          for tag in rhel9.6 rkel9.6 rhel10.0 rkel10.0; do
+            syft ${{ env.IMAGE_NAME }}:$tag -o spdx-json > sbom/$tag.spdx.json
+          done
+
+      # ---------- cosign ----------
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign images (keyless)
+        run: |
+          for tag in rhel9.6 rkel9.6 rhel10.0 rkel10.0; do
+            cosign sign --yes ${{ env.IMAGE_NAME }}:$tag
+          done
+
+      # ---------- release ----------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            sbom/*.json
