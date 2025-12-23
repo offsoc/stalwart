@@ -87,7 +87,7 @@ jobs:
           chmod +x artifacts/*
           sha256sum artifacts/* > artifacts/SHA256SUMS
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: binaries-${{ steps.tag.outputs.tag }}-amd64
           path: artifacts/
@@ -110,7 +110,7 @@ jobs:
           docker save ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-amd64 \
             | gzip > image-${{ steps.tag.outputs.tag }}-amd64.tar.gz
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: image-${{ steps.tag.outputs.tag }}-amd64
           path: image-${{ steps.tag.outputs.tag }}-amd64.tar.gz
@@ -176,7 +176,7 @@ jobs:
           chmod +x artifacts/*
           sha256sum artifacts/* > artifacts/SHA256SUMS
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: binaries-${{ steps.tag.outputs.tag }}-arm64
           path: artifacts/
@@ -198,7 +198,7 @@ jobs:
           docker save ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-arm64 \
             | gzip > image-${{ steps.tag.outputs.tag }}-arm64.tar.gz
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: image-${{ steps.tag.outputs.tag }}-arm64
           path: image-${{ steps.tag.outputs.tag }}-arm64.tar.gz
