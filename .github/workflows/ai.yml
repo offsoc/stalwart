@@ -19,7 +19,7 @@ env:
   BUILDKIT_PROGRESS: plain
 
 ############################################################
-# Job 1: Build amd64 (always)
+# Job 1: Build amd64
 ############################################################
 jobs:
   build-amd64:
@@ -28,7 +28,7 @@ jobs:
 
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
         dockerfile:
           - resources/Dockerfile.RHEL9.6
@@ -66,24 +66,23 @@ jobs:
           echo "tag=$t" >> $GITHUB_OUTPUT
 
       # ---------- builder: binaries ----------
-      - name: Build binaries (amd64)
+      - name: Build builder rootfs (amd64)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           target: builder
           platforms: linux/amd64
-          outputs: type=local,dest=./out-${{ steps.tag.outputs.tag }}-amd64
+          outputs: type=tar,dest=builder-${{ steps.tag.outputs.tag }}-amd64.tar
           cache-from: type=gha,scope=amd64
           cache-to: type=gha,scope=amd64,mode=min
 
-      - name: Prepare binaries (amd64)
+      - name: Extract binaries (amd64)
         run: |
-          mkdir -p artifacts
-          cp out-${{ steps.tag.outputs.tag }}-amd64/output/stalwart \
-             artifacts/stalwart-${{ steps.tag.outputs.tag }}-amd64
-          cp out-${{ steps.tag.outputs.tag }}-amd64/output/stalwart-cli \
-             artifacts/stalwart-cli-${{ steps.tag.outputs.tag }}-amd64
+          mkdir rootfs artifacts
+          tar -xf builder-${{ steps.tag.outputs.tag }}-amd64.tar -C rootfs
+          cp rootfs/output/stalwart artifacts/stalwart-${{ steps.tag.outputs.tag }}-amd64
+          cp rootfs/output/stalwart-cli artifacts/stalwart-cli-${{ steps.tag.outputs.tag }}-amd64
           chmod +x artifacts/*
           sha256sum artifacts/* > artifacts/SHA256SUMS
 
@@ -103,23 +102,12 @@ jobs:
           tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-amd64
           cache-from: type=gha,scope=amd64
           cache-to: type=gha,scope=amd64,mode=min
-          load: true
-
-      - name: Save image (amd64)
-        run: |
-          docker save ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-amd64 \
-            | gzip > image-${{ steps.tag.outputs.tag }}-amd64.tar.gz
-
-      - uses: actions/upload-artifact@v6
-        with:
-          name: image-${{ steps.tag.outputs.tag }}-amd64
-          path: image-${{ steps.tag.outputs.tag }}-amd64.tar.gz
 
 ############################################################
-# Job 2: Build arm64 (ONLY on tag)
+# Job 2: Build arm64 (tag only)
 ############################################################
   build-arm64:
-    name: Build arm64 (release only)
+    name: Build arm64
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04-arm64
 
@@ -155,24 +143,23 @@ jobs:
           esac
           echo "tag=$t" >> $GITHUB_OUTPUT
 
-      - name: Build binaries (arm64)
+      - name: Build builder rootfs (arm64)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           target: builder
           platforms: linux/arm64
-          outputs: type=local,dest=./out-${{ steps.tag.outputs.tag }}-arm64
+          outputs: type=tar,dest=builder-${{ steps.tag.outputs.tag }}-arm64.tar
           cache-from: type=gha,scope=arm64
           cache-to: type=gha,scope=arm64,mode=min
 
-      - name: Prepare binaries (arm64)
+      - name: Extract binaries (arm64)
         run: |
-          mkdir -p artifacts
-          cp out-${{ steps.tag.outputs.tag }}-arm64/output/stalwart \
-             artifacts/stalwart-${{ steps.tag.outputs.tag }}-arm64
-          cp out-${{ steps.tag.outputs.tag }}-arm64/output/stalwart-cli \
-             artifacts/stalwart-cli-${{ steps.tag.outputs.tag }}-arm64
+          mkdir rootfs artifacts
+          tar -xf builder-${{ steps.tag.outputs.tag }}-arm64.tar -C rootfs
+          cp rootfs/output/stalwart artifacts/stalwart-${{ steps.tag.outputs.tag }}-arm64
+          cp rootfs/output/stalwart-cli artifacts/stalwart-cli-${{ steps.tag.outputs.tag }}-arm64
           chmod +x artifacts/*
           sha256sum artifacts/* > artifacts/SHA256SUMS
 
@@ -191,20 +178,9 @@ jobs:
           tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-arm64
           cache-from: type=gha,scope=arm64
           cache-to: type=gha,scope=arm64,mode=min
-          load: true
-
-      - name: Save image (arm64)
-        run: |
-          docker save ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}-arm64 \
-            | gzip > image-${{ steps.tag.outputs.tag }}-arm64.tar.gz
-
-      - uses: actions/upload-artifact@v6
-        with:
-          name: image-${{ steps.tag.outputs.tag }}-arm64
-          path: image-${{ steps.tag.outputs.tag }}-arm64.tar.gz
 
 ############################################################
-# Job 3: Release / Manifest / SBOM / Cosign
+# Job 3: Release / Manifest / SBOM / Sign
 ############################################################
   release:
     name: Release / Manifest / SBOM / Sign
@@ -232,8 +208,7 @@ jobs:
             docker manifest push ${{ env.IMAGE_NAME }}:$tag
           done
 
-      - name: Install syft
-        uses: anchore/sbom-action/download-syft@v0
+      - uses: anchore/sbom-action/download-syft@v0
 
       - name: Generate SBOMs
         run: |
@@ -242,8 +217,7 @@ jobs:
             syft ${{ env.IMAGE_NAME }}:$tag -o spdx-json > sbom/$tag.spdx.json
           done
 
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@v3
 
       - name: Sign images
         run: |
@@ -251,8 +225,7 @@ jobs:
             cosign sign --yes ${{ env.IMAGE_NAME }}:$tag
           done
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: sbom/*.json
