@@ -323,52 +323,68 @@ jobs:
           name: artifact-${{matrix.target}}
           path: artifacts
 
-  macos:
-    name: Build / ${{matrix.target}}
-    runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-          - target: x86_64-apple-darwin
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+macos:
+  name: Build / ${{ matrix.target }}
+  runs-on: macos-latest
+  strategy:
+    fail-fast: false
+    matrix:
+      include:
+        - target: aarch64-apple-darwin
+        - target: x86_64-apple-darwin
 
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.9
-        with:
-          disable_annotations: true
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v6
 
-      #- name: Build FoundationDB Edition
-      #  env:
-      #    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #  run: |
-      #    rustup target add ${{matrix.target}}
-      #    # Get latest FoundationDB installer
-      #    curl --retry 5 -Lso foundationdb.pkg "$(gh api -X GET /repos/apple/foundationdb/releases --jq '.[] | select(.prerelease == false) | .assets[] | select(.name | test("${{startsWith(matrix.target, 'x86') && 'x86_64' || 'arm64'}}" + ".pkg$")) | .browser_download_url' | head -n1)"
-      #    echo "=== Package contents ==="
-      #    pkgutil --payload-files foundationdb.pkg || true
-      #    sudo installer -allowUntrusted -verbose -dumplog -pkg foundationdb.pkg -target /
-      #    cargo build --release --target ${{matrix.target}} -p stalwart --no-default-features --features "foundationdb s3 redis nats enterprise"
-      #    mkdir -p artifacts
-      #    mv ./target/${{matrix.target}}/release/stalwart ./artifacts/stalwart-foundationdb
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.9
+      with:
+        disable_annotations: true
 
-      - name: Build
-        run: |
-          rustup target add ${{matrix.target}}
-          cargo build --release --target ${{matrix.target}} -p stalwart --no-default-features --features "sqlite postgres mysql rocks s3 redis azure nats enterprise"
-          cargo build --release --target ${{matrix.target}} -p stalwart-cli
-          mkdir -p artifacts
-          mv ./target/${{matrix.target}}/release/stalwart ./artifacts/stalwart
-          mv ./target/${{matrix.target}}/release/stalwart-cli ./artifacts/stalwart-cli
+    - name: Install FoundationDB pkg for macOS
+      run: |
+        rustup target add ${{ matrix.target }}
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: artifact-${{matrix.target}}
-          path: artifacts
+        if [[ "${{ matrix.target }}" == "aarch64-apple-darwin" ]]; then
+          FDB_PKG="FoundationDB-7.3.69_arm64.pkg"
+          FDB_URL="https://github.com/apple/foundationdb/releases/download/7.3.69/$FDB_PKG"
+        else
+          FDB_PKG="FoundationDB-7.3.69_x86_64.pkg"
+          FDB_URL="https://github.com/apple/foundationdb/releases/download/7.3.69/$FDB_PKG"
+        fi
+
+        echo "Downloading $FDB_URL"
+        curl -fsSL -o "$FDB_PKG" "$FDB_URL"
+
+        echo "Installing $FDB_PKG"
+        sudo installer -pkg "$FDB_PKG" -target /
+
+        # sanity check
+        ls -l /usr/local/lib/libfdb_c* || ls -l /opt/homebrew/lib/libfdb_c*
+
+    - name: Build
+      run: |
+        cargo build --release \
+          --target ${{ matrix.target }} \
+          -p stalwart \
+          --no-default-features \
+          --features "sqlite postgres mysql rocks s3 redis azure nats enterprise"
+
+        cargo build --release \
+          --target ${{ matrix.target }} \
+          -p stalwart-cli
+
+        mkdir -p artifacts
+        mv ./target/${{ matrix.target }}/release/stalwart ./artifacts/stalwart
+        mv ./target/${{ matrix.target }}/release/stalwart-cli ./artifacts/stalwart-cli
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v6
+      with:
+        name: artifact-${{ matrix.target }}
+        path: artifacts
+
 
   release:
     name: Release
