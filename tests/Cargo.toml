@@ -75,7 +75,7 @@ chrono = "0.4"
 ring = { version = "0.17" }
 biscuit = "0.7.0"
 form_urlencoded = "1.1.0"
-rkyv = { version = "0.8.10", features = ["little_endian"] }
+rkyv = { version = "0.8.13", features = ["little_endian"] }
 compact_str = "0.9.0"
 quick-xml = "0.38"
 
